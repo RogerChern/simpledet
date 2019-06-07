@@ -132,7 +132,7 @@ def get_config(is_train):
         class pretrain:
             prefix = "pretrain_model/resnet%s_v1b" % BackboneParam.depth
             epoch = 0
-            fixed_param = ["conv0", "stage1", "gamma", "beta"]
+            fixed_param = []
 
 
     class OptimizeParam:
