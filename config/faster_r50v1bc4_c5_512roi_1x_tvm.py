@@ -14,6 +14,8 @@ def get_config(is_train):
         name = __name__.rsplit("/")[-1].rsplit(".")[-1]
         batch_image = 2 if is_train else 1
         fp16 = False
+        long_side = 1200
+        short_side = 800
 
 
     class KvstoreParam:
@@ -43,12 +45,13 @@ def get_config(is_train):
         fp16 = General.fp16
         normalizer = NormalizeParam.normalizer
         batch_image = General.batch_image
+        use_symbolic_proposal = True
 
         class anchor_generate:
             scale = (2, 4, 8, 16, 32)
             ratio = (0.5, 1.0, 2.0)
             stride = 16
-            long_side = 1200
+            max_side = General.long_side
             image_anchor = 256
 
         class head:
@@ -132,7 +135,7 @@ def get_config(is_train):
 
         process_weight = lambda sym, arg, aux: \
             add_anchor_to_arg(
-                sym, arg, aux, RpnParam.anchor_generate.long_side,
+                sym, arg, aux, RpnParam.anchor_generate.max_side,
                 RpnParam.anchor_generate.stride,RpnParam.anchor_generate.scale,
                 RpnParam.anchor_generate.ratio)
 
@@ -187,15 +190,14 @@ def get_config(is_train):
 
 
     class ResizeParam:
-        short = 800
-        long = 1200
+        short = General.short_side
+        long = General.long_side
 
 
     class PadParam:
         short = ResizeParam.short
         long = ResizeParam.long
         max_num_gt = 100
-    assert PadParam.long == RpnParam.anchor_generate.long_side
 
 
     class AnchorTarget2DParam:

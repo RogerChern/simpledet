@@ -110,12 +110,13 @@ if __name__ == "__main__":
             print(pprint.pformat([i for i in terminal_out_shape_dict]))
 
             arg_params, aux_params = load_checkpoint(pTest.model.prefix, pTest.model.epoch)
-            if pModel.process_weight is not None:
-                pModel.process_weight(sym, arg_params, aux_params)
+            pModel.process_weight(sym, arg_params, aux_params)
 
+            b = pGen.batch_image
+            l, s = pGen.long_side, pGen.short_side
             net, params = relay.frontend.from_mxnet(
                 sym, 
-                dict(data=(1, 3, 1200, 800), im_info=(1, 3), rec_id=(1, ), im_id=(1, )), 
+                dict(data=(b, 3, l, s), im_info=(b, 3), rec_id=(b, ), im_id=(b, )), 
                 arg_params=arg_params, 
                 aux_params=aux_params)
             
@@ -283,12 +284,13 @@ if __name__ == "__main__":
             print(pprint.pformat([i for i in terminal_out_shape_dict]))
 
             arg_params, aux_params = load_checkpoint(pTest.model.prefix, pTest.model.epoch)
-            if pModel.process_weight is not None:
-                pModel.process_weight(sym, arg_params, aux_params)
+            pModel.process_weight(sym, arg_params, aux_params)
 
+            b = pGen.batch_image
+            l, s = pGen.long_side, pGen.short_side
             net, params = relay.frontend.from_mxnet(
                 sym, 
-                dict(data=(1, 3, 800, 1200), im_info=(1, 3), rec_id=(1, ), im_id=(1, )), 
+                dict(data=(b, 3, s, l), im_info=(b, 3), rec_id=(b, ), im_id=(b, )), 
                 arg_params=arg_params, 
                 aux_params=aux_params)
 
