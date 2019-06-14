@@ -147,8 +147,8 @@ def get_config(is_train):
 
         from_scratch = False
         random = True
-        memonger = False
-        memonger_until = "stage3_unit21_plus"
+        memonger = True
+        memonger_until = "stage3_unit1_plus"
 
         class pretrain:
             prefix = "pretrain_model/resnet-v1-%s" % BackboneParam.depth
