@@ -20,21 +20,22 @@ def parse_args():
     # general
     parser.add_argument('--config', help='config file path', type=str, required=True)
     parser.add_argument('--shape', help='specify input 2d image shape', metavar=('SHORT', 'LONG'), type=int, nargs=2, required=True)
+    parser.add_argument('--device', help='target device, one of x86 or cuda', type=str, required=True)
     parser.add_argument('--gpu', help='GPU index', type=int, default=0)
     args = parser.parse_args()
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
-    return config, args.gpu, args.shape
+    return config, args.device, args.gpu, args.shape
 
 
-def tune_tasks(tasks,
-               measure_option,
-               tuner='xgb',
-               n_trial=1000,
-               early_stopping=None,
-               log_filename='tuning.log',
-               use_transfer_learning=True,
-               try_winograd=True):
+def tune_cuda(tasks,
+              measure_option,
+              tuner='xgb',
+              n_trial=1000,
+              early_stopping=None,
+              log_filename='tuning.log',
+              use_transfer_learning=True,
+              try_winograd=True):
     if try_winograd:
         for i in range(len(tasks)):
             try:  # try winograd template
@@ -94,8 +95,52 @@ def tune_tasks(tasks,
     os.remove(tmp_log_file)
 
 
+def tune_x86(tasks,
+             measure_option,
+             tuner='gridsearch',
+             early_stopping=None,
+             log_filename='tuning.log'):
+
+    for i, tsk in enumerate(tasks):
+        prefix = "[Task %2d/%2d] " % (i+1, len(tasks))
+
+        # converting conv2d tasks to conv2d_NCHWc tasks
+        op_name = tsk.workload[0]
+        if op_name == 'conv2d':
+            func_create = 'topi_x86_conv2d_NCHWc'
+        elif op_name == 'depthwise_conv2d_nchw':
+            func_create = 'topi_x86_depthwise_conv2d_NCHWc_from_nchw'
+        else:
+            raise ValueError("Tuning {} is not supported on x86".format(op_name))
+
+        task = autotvm.task.create(func_create, args=tsk.args,
+                                   target=target, template_key='direct')
+        task.workload = tsk.workload
+
+        # create tuner
+        if tuner == 'xgb' or tuner == 'xgb-rank':
+            tuner_obj = XGBTuner(task, loss_type='rank')
+        elif tuner == 'ga':
+            tuner_obj = GATuner(task, pop_size=50)
+        elif tuner == 'random':
+            tuner_obj = RandomTuner(task)
+        elif tuner == 'gridsearch':
+            tuner_obj = GridSearchTuner(task)
+        else:
+            raise ValueError("Invalid tuner: " + tuner)
+
+        # do tuning
+        n_trial=len(task.config_space)
+        tuner_obj.tune(n_trial=n_trial,
+                       early_stopping=early_stopping,
+                       measure_option=measure_option,
+                       callbacks=[
+                           autotvm.callback.progress_bar(n_trial, prefix=prefix),
+                           autotvm.callback.log_to_file(log_filename)])
+
+
 if __name__ == "__main__":
-    config, gpu, shape = parse_args()
+    config, device, gpu, shape = parse_args()
 
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
         transform, data_name, label_name, metric_list = config.get_config(is_train=False)
@@ -106,7 +151,8 @@ if __name__ == "__main__":
     im_id = mx.nd.array([1])
     rec_id = mx.nd.array([1])
     data_names = ["data", "im_info", "im_id", "rec_id"]
-    inputs = {k: tvm.nd.array(d.asnumpy(), ctx=tvm.gpu(gpu)) for k, d in zip(data_names, [data, im_info, im_id, rec_id])}
+    ctx = tvm.gpu(gpu) if device == "cuda" else tvm.cpu()
+    inputs = {k: tvm.nd.array(d.asnumpy(), ctx=ctx) for k, d in zip(data_names, [data, im_info, im_id, rec_id])}
 
     sym = pModel.test_symbol
     arg_params, aux_params = load_checkpoint(pTest.model.prefix, pTest.model.epoch)
@@ -119,32 +165,57 @@ if __name__ == "__main__":
         arg_params=arg_params, 
         aux_params=aux_params)
 
-    #### DEVICE CONFIG ####
-    target = tvm.target.cuda()
+    if device == "cuda":
+        #### DEVICE CONFIG ####
+        target = tvm.target.cuda()
 
-    #### TUNING OPTION ####
-    log_file = pTest.model.prefix.replace("checkpoint", "tune.log")
-    dtype = 'float32'
+        #### TUNING OPTION ####
+        log_file = pTest.model.prefix.replace("checkpoint", "tune.log")
+        dtype = 'float32'
 
-    tuning_option = {
-        'log_filename': log_file,
+        tuning_option = {
+            'log_filename': log_file,
 
-        'tuner': 'xgb',
-        'n_trial': 2000,
-        'early_stopping': 600,
+            'tuner': 'xgb',
+            'n_trial': 2000,
+            'early_stopping': 600,
 
-        'measure_option': autotvm.measure_option(
-            builder=autotvm.LocalBuilder(timeout=10),
-            #runner=autotvm.LocalRunner(number=20, repeat=3, timeout=4, min_repeat_ms=150),
-            runner=autotvm.RPCRunner(
-                '1080ti',  # change the device key to your key
-                '0.0.0.0', 9190,
-                number=20, repeat=3, timeout=20, min_repeat_ms=150)
-        ),
-    }
+            'measure_option': autotvm.measure_option(
+                builder=autotvm.LocalBuilder(timeout=10),
+                #runner=autotvm.LocalRunner(number=20, repeat=3, timeout=4, min_repeat_ms=150),
+                runner=autotvm.RPCRunner(
+                    '1080ti',  # change the device key to your key
+                    '0.0.0.0', 9190,
+                    number=20, repeat=3, timeout=20, min_repeat_ms=150)
+            ),
+        }
 
-    print("Extract tasks...")
-    tasks = autotvm.task.extract_from_program(net, target=target,
-                                        params=params, ops=(relay.op.nn.conv2d,))
-    print("Tuning...")
-    tune_tasks(tasks, **tuning_option)
+        print("Extract tasks...")
+        tasks = autotvm.task.extract_from_program(net[net.entry_func], target=target,
+                                            params=params, ops=(relay.op.nn.conv2d,))
+        print("Tuning...")
+        tune_cuda(tasks, **tuning_option)
+
+    elif device == "x86":
+        target = "llvm -mcpu=core-avx2"
+        num_threads = 56
+        os.environ["TVM_NUM_THREADS"] = str(num_threads)
+
+        log_file = pTest.model.prefix.replace("checkpoint", "tune_x86.log")
+
+        tuning_option = {
+            'log_filename': log_file,
+            'tuner': 'random',
+            'early_stopping': None,
+
+            'measure_option': autotvm.measure_option(
+                builder=autotvm.LocalBuilder(),
+                runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000),
+            ),
+        }
+
+        print("Extract tasks...")
+        tasks = autotvm.task.extract_from_program(net[net.entry_func], target=target,
+                                            params=params, ops=(relay.op.nn.conv2d,))
+        print("Tuning...")
+        tune_x86(tasks, **tuning_option)
