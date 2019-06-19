@@ -53,17 +53,17 @@ if __name__ == "__main__":
 
     with autotvm.apply_history_best(pTest.model.prefix.replace("checkpoint", "tune.log")):
         with relay.build_config(opt_level=3):
-            graph, lib, params = relay.build(net, "cuda", params=params)
+            graph, lib, params = relay.build(net[net.entry_func], "cuda", params=params)
 
     ctx = tvm.gpu(gpu)
     exe = graph_runtime.create(graph, lib, ctx)
     exe.set_input(**params)
     exe.set_input(**inputs)
-    #
+     
+    # run once
     exe.run()
     exe.get_output(0)
-    exe.run()
-    exe.get_output(0)
+
     # # evaluate
     # ftimer = exe.module.time_evaluator("run", ctx, number=1, repeat=count)
     # prof_res = np.array(ftimer().results) * 1000  # convert to millisecond
