@@ -383,6 +383,41 @@ class MSRAResNet101V1FPN(Backbone):
         return self.symbol
 
 
+class MSRAResNetV1DilatedFPN(Backbone):
+    def __init__(self, pBackbone):
+        super().__init__(pBackbone)
+
+        p = self.p
+        fp16 = p.fp16
+        norm = p.normalizer
+        variant = p.variant or "c4"
+
+        from mxnext.backbone.resnet_v1_helper import depth_config, \
+            resnet_c1, resnet_c2, resnet_c3, resnet_c4, resnet_c5
+        num_c2, num_c3, num_c4, num_c5 = depth_config[self.p.depth]
+
+        # construct
+        data = X.var("data")
+        if fp16:
+            data = X.to_fp16(data, "data_fp16")
+        c1 = resnet_c1(data, norm)
+        c2 = resnet_c2(c1, num_c2, 1, 1, norm)
+        c3 = resnet_c3(c2, num_c3, 2, 1, norm)
+        if variant == "c4":
+            c4 = resnet_c4(c3, num_c4, 2, 2, norm)
+            c5 = resnet_c5(c4, num_c5, 2, 2, norm)
+        elif variant == "c5":
+            c4 = resnet_c4(c3, num_c4, 2, 1, norm)
+            c5 = resnet_c5(c4, num_c5, 2, 2, norm)
+        self.symbol = [c2, c3, c4, c5]
+
+    def get_rpn_feature(self):
+        return self.symbol
+
+    def get_rcnn_feature(self):
+        return self.symbol
+
+
 class FPNNeck(Neck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
