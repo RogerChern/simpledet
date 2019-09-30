@@ -21,7 +21,8 @@ def roidb_to_coco(roidb):
             'width': roirec['w'], 
             'height': roirec['h']
         })
-        roirec['gt_bbox'] = xyxy_to_xywh(roirec['gt_bbox'])
+        if len(roirec['gt_bbox']) > 0:
+            roirec['gt_bbox'] = xyxy_to_xywh(roirec['gt_bbox'])
         for bbox, cls in zip(roirec['gt_bbox'], roirec['gt_class']):
             x, y, h, w = bbox.tolist()
             dataset["annotations"].append({
