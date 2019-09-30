@@ -45,6 +45,24 @@ class ReadRoiRecord(DetectionAugmentation):
         #     input_record[s] = gt_dict[s]
 
 
+class ReadImageRecord(DetectionAugmentation):
+    """
+    input: image_url, str
+           gt_url, str
+    output: image, ndarray(h, w, rgb)
+            image_raw_meta, tuple(h, w)
+            gt, any
+    """
+
+    def __init__(self, gt_select):
+        super().__init__()
+        self.gt_select = gt_select
+
+    def apply(self, input_record):
+        image = cv2.imread(input_record["image_url"], cv2.IMREAD_COLOR)
+        input_record["image"] = image[:, :, ::-1].astype("float32")
+
+
 class Norm2DImage(DetectionAugmentation):
     """
     input: image, ndarray(h, w, rgb)
