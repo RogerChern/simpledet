@@ -22,6 +22,8 @@ def parse_args():
     # general
     parser.add_argument('--config', help='config file path', type=str)
     parser.add_argument('--epoch', help='override test epoch specified by config', type=int, default=None)
+    parser.add_argument('--result-type', type=str, default='bbox')
+    parser.add_argument('--classwise', action='store_true')
     args = parser.parse_args()
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
@@ -291,7 +293,18 @@ if __name__ == "__main__":
 
     coco_dt = coco.loadRes(coco_result)
     coco_eval = COCOeval(coco, coco_dt)
-    coco_eval.params.iouType = "bbox"
+    coco_eval.params.iouType = args.result_type
+
+    if args.classwise:
+        for i, k in coco.cats.items():
+            print("\nEvaluating **%s**" % k["name"])
+            coco_eval.params.catIds = i
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
+
+    print("\nEvaluating **all**")
+    coco_eval.params.catIds = sorted(coco.getCatIds())
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()
