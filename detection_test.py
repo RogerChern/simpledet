@@ -23,7 +23,9 @@ def parse_args():
     parser.add_argument('--config', help='config file path', type=str)
     parser.add_argument('--epoch', help='override test epoch specified by config', type=int, default=None)
     parser.add_argument('--result-type', type=str, default='bbox')
+    parser.add_argument('--result-path', type=str, default=None)
     parser.add_argument('--classwise', action='store_true')
+    parser.add_argument('--no-eval', action='store_true')
     args = parser.parse_args()
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
@@ -287,9 +289,9 @@ if __name__ == "__main__":
         print("convert to coco format uses: %.1f" % (t5_s - t4_s))
 
     import json
-    json.dump(coco_result,
-              open("experiments/{}/{}_result.json".format(pGen.name, pDataset.image_set[0]), "w"),
-              sort_keys=True, indent=2)
+    result_path = args.result_path or \
+        "experiments/{}/{}_result.json".format(pGen.name, pDataset.image_set[0])
+    json.dump(coco_result, open(result_path, "w"), sort_keys=True, indent=2)
 
     coco_dt = coco.loadRes(coco_result)
     coco_eval = COCOeval(coco, coco_dt)
@@ -303,11 +305,12 @@ if __name__ == "__main__":
             coco_eval.accumulate()
             coco_eval.summarize()
 
-    print("\nEvaluating **all**")
-    coco_eval.params.catIds = sorted(coco.getCatIds())
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    coco_eval.summarize()
+    if not args.no_eval:
+        print("\nEvaluating **all**")
+        coco_eval.params.catIds = sorted(coco.getCatIds())
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
 
-    t6_s = time.time()
-    print("coco eval uses: %.1f" % (t6_s - t5_s))
+        t6_s = time.time()
+        print("coco eval uses: %.1f" % (t6_s - t5_s))
