@@ -69,7 +69,7 @@ if __name__ == "__main__":
     execs = []
     workers = []
     coco_result = []
-    split_size = 1000
+    split_size = 5000
 
     for index_split in range(int(math.ceil(len(roidbs_all) / split_size))):
         print("evaluating [%d, %d)" % (index_split * split_size, (index_split + 1) * split_size))
@@ -297,15 +297,15 @@ if __name__ == "__main__":
     coco_eval = COCOeval(coco, coco_dt)
     coco_eval.params.iouType = args.result_type
 
-    if args.classwise:
-        for i, k in coco.cats.items():
-            print("\nEvaluating **%s**" % k["name"])
-            coco_eval.params.catIds = i
-            coco_eval.evaluate()
-            coco_eval.accumulate()
-            coco_eval.summarize()
-
     if not args.no_eval:
+        if args.classwise:
+            for i, k in coco.cats.items():
+                print("\nEvaluating **%s**" % k["name"])
+                coco_eval.params.catIds = i
+                coco_eval.evaluate()
+                coco_eval.accumulate()
+                coco_eval.summarize()
+
         print("\nEvaluating **all**")
         coco_eval.params.catIds = sorted(coco.getCatIds())
         coco_eval.evaluate()
