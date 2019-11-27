@@ -20,6 +20,29 @@ def merge_gp(f1, f2, name):
     fuse_sum = mx.sym.ElementWiseSum(f1, fuse_mul, name=name + '_sum')
     return fuse_sum
 
+
+def relusepconvbn(data, num_filter, init, norm, name, prefix):
+    """
+    :param data: data
+    :param num_filter: number of convolution filter
+    :param init: init method of conv weight
+    :param norm: normalizer
+    :param name: name
+    :return: relu-3x3conv-bn
+    """
+    data = mx.sym.Activation(data, name=name + '_relu', act_type='relu')
+    weight = mx.sym.var(name=prefix + name + "dwconv_weight", init=init)
+    bias = mx.sym.var(name=prefix + name + "dwconv_bias")
+    data = mx.sym.Convolution(data, name=prefix + name, weight=weight, bias=bias, num_filter=num_filter, num_group=num_filter, kernel=(3, 3), pad=(1, 1), stride=(1, 1))
+    data = norm(data, name=name + 'dwconv_bn')
+    data = X.relu(data, name=name + '_dwconv_relu')
+    weight = mx.sym.var(name=prefix + name + "pwconv_weight", init=init)
+    bias = mx.sym.var(name=prefix + name + "pwconv_bias")
+    data = X.conv(data, num_filter, weight=weight, bias=bias)
+    data = norm(data, name=name + 'pwconv_bn')
+    return data
+
+
 class NASFPNNeck(Neck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
@@ -168,7 +191,12 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
         super().__init__(pNeck)
     
     @staticmethod
-    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
+    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm, use_sep_conv=False):
+        if use_sep_conv:
+            conv_type = relusepconvbn
+        else:
+            conv_type = X.reluconvbn
+
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -188,7 +216,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
-            P6_1 = X.reluconvbn(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
+            P6_1 = conv_type(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
             # P5_1 = sum(P5_0, P6_1)
             P6_1_to_P5 = mx.sym.UpSampling(
                 P6_1,
@@ -198,7 +226,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P5_1 = X.merge_sum([P5_0, P6_1_to_P5], name="sum_P5_0_P6_1")
-            P5_1 = X.reluconvbn(P5_1, dim_reduced, init, norm, name="P5_1", prefix=prefix)
+            P5_1 = conv_type(P5_1, dim_reduced, init, norm, name="P5_1", prefix=prefix)
             # P4_1 = sum(P4_0, P5_1)
             P5_1_to_P4 = mx.sym.UpSampling(
                 P5_1,
@@ -208,7 +236,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P4_1 = X.merge_sum([P4_0, P5_1_to_P4], name="sum_P4_0_P5_1")
-            P4_1 = X.reluconvbn(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
+            P4_1 = conv_type(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
             # P3_1 = sum(P3_0, P4_1)
             P4_1_to_P3 = mx.sym.UpSampling(
                 P4_1,
@@ -218,7 +246,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P3_1 = X.merge_sum([P3_0, P4_1_to_P3], name="sum_P3_0_P4_1")
-            P3_1 = X.reluconvbn(P3_1, dim_reduced, init, norm, name="P3_1", prefix=prefix)
+            P3_1 = conv_type(P3_1, dim_reduced, init, norm, name="P3_1", prefix=prefix)
 
             P3_2 = P3_1
             P3 = P3_2
@@ -226,22 +254,22 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
             # P4_2 = sum(P3_2, P4_1)
             P3_2_to_P4 = X.pool(P3_2, name="P3_2_to_P4", kernel=2, stride=2, pad=0)
             P4_2 = X.merge_sum([P4_1, P3_2_to_P4], name="sum_P4_1_P3_2")
-            P4_2 = X.reluconvbn(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
+            P4_2 = conv_type(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
             P4 = P4_2
             # P5_2 = sum(P4_2, P5_1)
             P4_2_to_P5 = X.pool(P4_2, name="P4_2_to_P5", kernel=2, stride=2, pad=0)
             P5_2 = X.merge_sum([P5_1, P4_2_to_P5], name="sum_P5_1_P4_2")
-            P5_2 = X.reluconvbn(P5_2, dim_reduced, init, norm, name="P5_2", prefix=prefix)
+            P5_2 = conv_type(P5_2, dim_reduced, init, norm, name="P5_2", prefix=prefix)
             P5 = P5_2
             # P6_2 = sum(P5_2, P6_1)
             P5_2_to_P6 = X.pool(P5_2, name="P5_2_to_P6", kernel=2, stride=2, pad=0)
             P6_2 = X.merge_sum([P6_1, P5_2_to_P6], name="sum_P6_1_P5_2")
-            P6_2 = X.reluconvbn(P6_2, dim_reduced, init, norm, name="P6_2", prefix=prefix)
+            P6_2 = conv_type(P6_2, dim_reduced, init, norm, name="P6_2", prefix=prefix)
             P6 = P6_2
             # P7_2 = sum(P6_2, P7_1)
             P6_2_to_P7 = X.pool(P6_2, name="P6_2_to_P7", kernel=2, stride=2, pad=0)
             P7_2 = X.merge_sum([P7_1, P6_2_to_P7], name="sum_P7_1_P6_2")
-            P7_2 = X.reluconvbn(P7_2, dim_reduced, init, norm, name="P7_2", prefix=prefix)
+            P7_2 = conv_type(P7_2, dim_reduced, init, norm, name="P7_2", prefix=prefix)
             P7 = P7_2
 
             return {'S{}_P3'.format(stage): P3,
@@ -258,59 +286,28 @@ class RetinaNetHeadWithBN(RetinaNetHead):
     def _cls_subnet(self, conv_feat, conv_channel, num_base_anchor, num_class, stride):
         p = self.p
         norm = p.normalizer
+        num_conv = self.p.num_conv or 4
 
         # classification subnet
-        cls_conv1 = X.conv(
-            data=conv_feat,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.cls_conv1_weight,
-            bias=self.cls_conv1_bias,
-            no_bias=False,
-            name="cls_conv1"
-        )
-        cls_conv1 = norm(cls_conv1, name="cls_conv1_bn_s{}".format(stride))
-        cls_conv1_relu = X.relu(cls_conv1)
-        cls_conv2 = X.conv(
-            data=cls_conv1_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.cls_conv2_weight,
-            bias=self.cls_conv2_bias,
-            no_bias=False,
-            name="cls_conv2"
-        )
-        cls_conv2 = norm(cls_conv2, name="cls_conv2_bn_s{}".format(stride))
-        cls_conv2_relu = X.relu(cls_conv2)
-        cls_conv3 = X.conv(
-            data=cls_conv2_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.cls_conv3_weight,
-            bias=self.cls_conv3_bias,
-            no_bias=False,
-            name="cls_conv3"
-        )
-        cls_conv3 = norm(cls_conv3, name="cls_conv3_bn_s{}".format(stride))
-        cls_conv3_relu = X.relu(cls_conv3)
-        cls_conv4 = X.conv(
-            data=cls_conv3_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.cls_conv4_weight,
-            bias=self.cls_conv4_bias,
-            no_bias=False,
-            name="cls_conv4"
-        )
-        cls_conv4 = norm(cls_conv4, name="cls_conv4_bn_s{}".format(stride))
-        cls_conv4_relu = X.relu(cls_conv4)
+        for i in range(1, num_conv + 1):
+            cls_conv = X.conv(
+                data=conv_feat,
+                kernel=3,
+                filter=conv_channel,
+                weight=eval("self.cls_conv%d_weight" % i),
+                bias=eval("self.cls_conv%d_bias" % i),
+                no_bias=False,
+                name="cls_conv%d" % i
+            )
+            cls_conv = norm(cls_conv, name="cls_conv%d_bn_s%d" % (i, stride))
+            cls_conv = X.relu(cls_conv)
 
         if p.fp16:
-            cls_conv4_relu = X.to_fp32(cls_conv4_relu, name="cls_conv4_fp32")
+            cls_conv = X.to_fp32(cls_conv, name="cls_conv%d_fp32" % i)
 
         output_channel = num_base_anchor * (num_class - 1)
         output = X.conv(
-            data=cls_conv4_relu,
+            data=cls_conv,
             kernel=3,
             filter=output_channel,
             weight=self.cls_pred_weight,
@@ -323,59 +320,28 @@ class RetinaNetHeadWithBN(RetinaNetHead):
     def _bbox_subnet(self, conv_feat, conv_channel, num_base_anchor, num_class, stride):
         p = self.p
         norm = p.normalizer
+        num_conv = self.p.num_conv or 4
 
-        # regression subnet
-        bbox_conv1 = X.conv(
-            data=conv_feat,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.bbox_conv1_weight,
-            bias=self.bbox_conv1_bias,
-            no_bias=False,
-            name="bbox_conv1"
-        )
-        bbox_conv1 = norm(bbox_conv1, name="bbox_conv1_bn_s{}".format(stride))
-        bbox_conv1_relu = X.relu(bbox_conv1)
-        bbox_conv2 = X.conv(
-            data=bbox_conv1_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.bbox_conv2_weight,
-            bias=self.bbox_conv2_bias,
-            no_bias=False,
-            name="bbox_conv2"
-        )
-        bbox_conv2 = norm(bbox_conv2, name="bbox_conv2_bn_s{}".format(stride))
-        bbox_conv2_relu = X.relu(bbox_conv2)
-        bbox_conv3 = X.conv(
-            data=bbox_conv2_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.bbox_conv3_weight,
-            bias=self.bbox_conv3_bias,
-            no_bias=False,
-            name="bbox_conv3"
-        )
-        bbox_conv3 = norm(bbox_conv3, name="bbox_conv3_bn_s{}".format(stride))
-        bbox_conv3_relu = X.relu(bbox_conv3)
-        bbox_conv4 = X.conv(
-            data=bbox_conv3_relu,
-            kernel=3,
-            filter=conv_channel,
-            weight=self.bbox_conv4_weight,
-            bias=self.bbox_conv4_bias,
-            no_bias=False,
-            name="bbox_conv4"
-        )
-        bbox_conv4 = norm(bbox_conv4, name="bbox_conv4_bn_s{}".format(stride))
-        bbox_conv4_relu = X.relu(bbox_conv4)
+        # bbox subnet
+        for i in range(1, num_conv + 1):
+            bbox_conv = X.conv(
+                data=conv_feat,
+                kernel=3,
+                filter=conv_channel,
+                weight=eval("self.bbox_conv%d_weight" % i),
+                bias=eval("self.bbox_conv%d_bias" % i),
+                no_bias=False,
+                name="bbox_conv%d" % i
+            )
+            bbox_conv = norm(bbox_conv, name="bbox_conv%d_bn_s%d" % (i, stride))
+            bbox_conv = X.relu(bbox_conv)
 
         if p.fp16:
-            bbox_conv4_relu = X.to_fp32(bbox_conv4_relu, name="bbox_conv4_fp32")
+            bbox_conv = X.to_fp32(bbox_conv, name="bbox_conv%d_fp32" % i)
 
         output_channel = num_base_anchor * 4
         output = X.conv(
-            data=bbox_conv4_relu,
+            data=bbox_conv,
             kernel=3,
             filter=output_channel,
             weight=self.bbox_pred_weight,

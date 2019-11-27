@@ -78,6 +78,16 @@ def efficientnet_helper(data, norm, us, fos, fis, ss, ks, cs):
     return stages
 
 
+def efficientnet_b1(data, norm, **kwargs):
+    us = [1, 2, 3, 3, 4, 4, 5, 2, 1]
+    fos = [32, 16, 24, 40, 80, 112, 192, 320, 1280]
+    fis = [0] + fos[:-1]
+    ss = [2, 1, 2, 2, 2, 1, 2, 1, 1]
+    ks = [3, 3, 3, 5, 3, 5, 5, 3, 1]
+    cs = [convnormrelu, mbc1, mbc6, mbc6, mbc6, mbc6, mbc6, mbc6, convnormrelu]
+    return efficientnet_helper(data, norm, us, fos, fis, ss, ks, cs)
+
+
 def efficientnet_b4(data, norm, **kwargs):
     # 1.5 GFLOPs
     us = [1, 2, 4, 4, 6, 6, 8, 2, 1]
@@ -142,6 +152,7 @@ def efficientnet_fpn_builder(efficientnet):
     return EfficientNetFPN
 
 
+EfficientNetB1FPN = efficientnet_fpn_builder(efficientnet_b1)
 EfficientNetB4FPN = efficientnet_fpn_builder(efficientnet_b4)
 EfficientNetB5FPN = efficientnet_fpn_builder(efficientnet_b5)
 EfficientNetB6FPN = efficientnet_fpn_builder(efficientnet_b6)
