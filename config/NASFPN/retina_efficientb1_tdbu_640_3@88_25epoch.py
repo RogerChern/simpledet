@@ -50,7 +50,7 @@ def get_config(is_train):
             image_anchor = None
 
         class head:
-            conv_channel = 88
+            conv_channel = 256
             mean = None
             std = None
 
@@ -83,9 +83,9 @@ def get_config(is_train):
 
     class DatasetParam:
         if is_train:
-            image_set = ("coco_train2017", "coco_val2017")
+            image_set = ("coco_train2017", )
         else:
-            image_set = ("coco_test-dev2017", )
+            image_set = ("coco_val2017", )
 
     backbone = Backbone(BackboneParam)
     neck = Neck(NeckParam)
@@ -124,9 +124,9 @@ def get_config(is_train):
 
         class schedule:
             begin_epoch = 0
-            end_epoch = 25
-            lr_iter = [15272 * 15 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
-                       15272 * 20 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
+            end_epoch = 50
+            lr_iter = [15272 * 40 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
+                       15272 * 45 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
 
         class warmup:
             type = "gradual"
