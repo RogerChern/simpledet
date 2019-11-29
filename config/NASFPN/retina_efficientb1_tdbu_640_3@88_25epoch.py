@@ -21,7 +21,7 @@ def get_config(is_train):
 
 
     class NormalizeParam:
-        normalizer = normalizer_factory(type="localbn", wd_mult=1.0)
+        normalizer = normalizer_factory(type="localbn", eps=1e-4, mom=0.9998)
 
 
     class BackboneParam:
@@ -63,7 +63,7 @@ def get_config(is_train):
 
         class focal_loss:
             alpha = 0.25
-            gamma = 2.0
+            gamma = 1.5
 
 
     class BboxParam:
@@ -117,20 +117,21 @@ def get_config(is_train):
     class OptimizeParam:
         class optimizer:
             type = "sgd"
-            lr = 0.01 / 8 * len(KvstoreParam.gpus) * KvstoreParam.batch_image
+            lr = 0.005 / 8 * len(KvstoreParam.gpus) * KvstoreParam.batch_image
+            lr_mode = "cosine"
             momentum = 0.9
-            wd = 0.0001
+            wd = 4e-5
             clip_gradient = None
 
         class schedule:
             begin_epoch = 0
-            end_epoch = 50
-            lr_iter = [15272 * 40 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
-                       15272 * 45 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
+            end_epoch = 25
+            lr_iter = [15272 * 15 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
+                       15272 * 20 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
 
         class warmup:
             type = "gradual"
-            lr = 0.001 / 8 * len(KvstoreParam.gpus) * KvstoreParam.batch_image
+            lr = 0
             iter = 15272 * 1 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)
 
 
