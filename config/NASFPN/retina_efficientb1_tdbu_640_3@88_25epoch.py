@@ -21,7 +21,7 @@ def get_config(is_train):
 
 
     class NormalizeParam:
-        normalizer = normalizer_factory(type="localbn", eps=1e-4, mom=0.9998)
+        normalizer = normalizer_factory(type="localbn", eps=1e-4, mom=0.997)
 
 
     class BackboneParam:
@@ -126,13 +126,12 @@ def get_config(is_train):
         class schedule:
             begin_epoch = 0
             end_epoch = 25
-            lr_iter = [15272 * 15 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
-                       15272 * 20 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
+            lr_iter = []
 
         class warmup:
             type = "gradual"
             lr = 0
-            iter = 15272 * 1 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)
+            iter = 15272 * 1 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image) // 3
 
 
     class TestParam:
