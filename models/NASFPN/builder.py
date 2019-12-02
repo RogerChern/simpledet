@@ -7,6 +7,16 @@ from symbol.builder import Backbone, Neck
 from models.retinanet.builder import RetinaNetHead
 from models.retinanet.builder import RetinaNetNeck
 
+
+def up2x(f, name):
+    return mx.sym.UpSampling(
+                f,
+                scale=2,
+                sample_type='nearest',
+                name=name,
+                num_args=1)
+
+
 def merge_gp(f1, f2, name):
     """
     :param f1: feature 1, attention feature
@@ -21,25 +31,23 @@ def merge_gp(f1, f2, name):
     return fuse_sum
 
 
-def relusepconvbn(data, num_filter, init, norm, name, prefix):
+def sepconvbnrelu(data, num_filter, init, norm, name, prefix):
     """
     :param data: data
     :param num_filter: number of convolution filter
     :param init: init method of conv weight
     :param norm: normalizer
     :param name: name
-    :return: relu-3x3conv-bn
+    :return: 3x3dwconv-bn-relu-1x1pwconv-bn-relu
     """
-    data = mx.sym.Activation(data, name=name + '_relu', act_type='relu')
-    weight = mx.sym.var(name=prefix + name + "dwconv_weight", init=init)
-    bias = mx.sym.var(name=prefix + name + "dwconv_bias")
-    data = mx.sym.Convolution(data, name=prefix + name, weight=weight, bias=bias, num_filter=num_filter, num_group=num_filter, kernel=(3, 3), pad=(1, 1), stride=(1, 1))
-    data = norm(data, name=name + 'dwconv_bn')
+    name = prefix + name
+    data = X.dwconv(data, name=name + '_dwconv', filter=num_filter, kernel=3, init=init)
+    data = norm(data, name=name + '_dwconv_bn')
     data = X.relu(data, name=name + '_dwconv_relu')
-    weight = mx.sym.var(name=prefix + name + "pwconv_weight", init=init)
-    bias = mx.sym.var(name=prefix + name + "pwconv_bias")
-    data = X.conv(data, num_filter, weight=weight, bias=bias)
-    data = norm(data, name=name + 'pwconv_bn')
+
+    data = X.conv(data, name=name + '_pwconv', filter=num_filter, init=init)
+    data = norm(data, name=name + '_pwconv_bn')
+    data = X.relu(data, name=name + '_pwconv_relu')
     return data
 
 
@@ -191,12 +199,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
         super().__init__(pNeck)
     
     @staticmethod
-    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm, use_sep_conv=False):
-        if use_sep_conv:
-            conv_type = relusepconvbn
-        else:
-            conv_type = X.reluconvbn
-
+    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -216,7 +219,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
-            P6_1 = conv_type(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
+            P6_1 = X.reluconvbn(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
             # P5_1 = sum(P5_0, P6_1)
             P6_1_to_P5 = mx.sym.UpSampling(
                 P6_1,
@@ -226,7 +229,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P5_1 = X.merge_sum([P5_0, P6_1_to_P5], name="sum_P5_0_P6_1")
-            P5_1 = conv_type(P5_1, dim_reduced, init, norm, name="P5_1", prefix=prefix)
+            P5_1 = X.reluconvbn(P5_1, dim_reduced, init, norm, name="P5_1", prefix=prefix)
             # P4_1 = sum(P4_0, P5_1)
             P5_1_to_P4 = mx.sym.UpSampling(
                 P5_1,
@@ -236,7 +239,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P4_1 = X.merge_sum([P4_0, P5_1_to_P4], name="sum_P4_0_P5_1")
-            P4_1 = conv_type(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
+            P4_1 = X.reluconvbn(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
             # P3_1 = sum(P3_0, P4_1)
             P4_1_to_P3 = mx.sym.UpSampling(
                 P4_1,
@@ -246,7 +249,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
                 num_args=1
             )
             P3_1 = X.merge_sum([P3_0, P4_1_to_P3], name="sum_P3_0_P4_1")
-            P3_1 = conv_type(P3_1, dim_reduced, init, norm, name="P3_1", prefix=prefix)
+            P3_1 = X.reluconvbn(P3_1, dim_reduced, init, norm, name="P3_1", prefix=prefix)
 
             P3_2 = P3_1
             P3 = P3_2
@@ -254,22 +257,93 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
             # P4_2 = sum(P3_2, P4_1)
             P3_2_to_P4 = X.pool(P3_2, name="P3_2_to_P4", kernel=2, stride=2, pad=0)
             P4_2 = X.merge_sum([P4_1, P3_2_to_P4], name="sum_P4_1_P3_2")
-            P4_2 = conv_type(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
+            P4_2 = X.reluconvbn(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
             P4 = P4_2
             # P5_2 = sum(P4_2, P5_1)
             P4_2_to_P5 = X.pool(P4_2, name="P4_2_to_P5", kernel=2, stride=2, pad=0)
             P5_2 = X.merge_sum([P5_1, P4_2_to_P5], name="sum_P5_1_P4_2")
-            P5_2 = conv_type(P5_2, dim_reduced, init, norm, name="P5_2", prefix=prefix)
+            P5_2 = X.reluconvbn(P5_2, dim_reduced, init, norm, name="P5_2", prefix=prefix)
             P5 = P5_2
             # P6_2 = sum(P5_2, P6_1)
             P5_2_to_P6 = X.pool(P5_2, name="P5_2_to_P6", kernel=2, stride=2, pad=0)
             P6_2 = X.merge_sum([P6_1, P5_2_to_P6], name="sum_P6_1_P5_2")
-            P6_2 = conv_type(P6_2, dim_reduced, init, norm, name="P6_2", prefix=prefix)
+            P6_2 = X.reluconvbn(P6_2, dim_reduced, init, norm, name="P6_2", prefix=prefix)
             P6 = P6_2
             # P7_2 = sum(P6_2, P7_1)
             P6_2_to_P7 = X.pool(P6_2, name="P6_2_to_P7", kernel=2, stride=2, pad=0)
             P7_2 = X.merge_sum([P7_1, P6_2_to_P7], name="sum_P7_1_P6_2")
-            P7_2 = conv_type(P7_2, dim_reduced, init, norm, name="P7_2", prefix=prefix)
+            P7_2 = X.reluconvbn(P7_2, dim_reduced, init, norm, name="P7_2", prefix=prefix)
+            P7 = P7_2
+
+            return {'S{}_P3'.format(stage): P3,
+                    'S{}_P4'.format(stage): P4,
+                    'S{}_P5'.format(stage): P5,
+                    'S{}_P6'.format(stage): P6,
+                    'S{}_P7'.format(stage): P7}
+
+
+class BiFPNNeck(NASFPNNeck):
+    def __init__(self, pNeck):
+        super().__init__(pNeck)
+    
+    @staticmethod
+    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
+        prefix = "S{}_".format(stage)
+        with mx.name.Prefix(prefix):
+            P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
+            P4_0 = p_features['S{}_P4'.format(stage-1)] # s16
+            P5_0 = p_features['S{}_P5'.format(stage-1)] # s32
+            P6_0 = p_features['S{}_P6'.format(stage-1)] # s64
+            P7_0 = p_features['S{}_P7'.format(stage-1)] # s128
+
+            # P7_1
+            P7_1 = P7_0
+            
+            # P6_1 = sum(P6_0, P7_1)
+            P7_1_to_P6 = up2x(P7_1, "P7_1_to_P6")
+	    P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
+            P6_1 = sepconvbnrelu(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
+            
+            # P5_1 = sum(P5_0, P6_1)
+            P6_1_to_P5 = up2x(P6_1, "P6_1_to_P5")
+            P5_1 = X.merge_sum([P5_0, P6_1_to_P5], name="sum_P5_0_P6_1")
+            P5_1 = sepconvbnrelu(P5_1, dim_reduced, init, norm, name="P5_1", prefix=prefix)
+            
+            # P4_1 = sum(P4_0, P5_1)
+            P5_1_to_P4 = up2x(P5_1, "P5_1_to_P4")
+            P4_1 = X.merge_sum([P4_0, P5_1_to_P4], name="sum_P4_0_P5_1")
+            P4_1 = sepconvbnrelu(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
+            
+
+            # P3_1
+            P4_1_to_P3 = up2x(P4_1, name="P4_1_to_P3")
+            P3_1 = X.merge_sum([P3_0, P4_1_to_P3], name="sum_P3_0_P4_1")
+            P3_1 = sepconvbnrelu(P3_0, dim_reduced, init, norm, name="P3_1", prefix=prefix)
+            P3_2 = P3_1
+            P3 = P3_2
+
+            # P4_2 = sum(P3_2, P4_1)
+            P3_2_to_P4 = X.pool(P3_2, name="P3_2_to_P4", kernel=2, stride=2, pad=0)
+            P4_2 = X.merge_sum([P4_1, P3_2_to_P4], name="sum_P4_1_P3_2")
+            P4_2 = sepconvbnrelu(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
+            P4 = P4_2 + P4_0
+
+            # P5_2 = sum(P4_2, P5_1)
+            P4_2_to_P5 = X.pool(P4_2, name="P4_2_to_P5", kernel=2, stride=2, pad=0)
+            P5_2 = X.merge_sum([P5_1, P4_2_to_P5], name="sum_P5_1_P4_2")
+            P5_2 = sepconvbnrelu(P5_2, dim_reduced, init, norm, name="P5_2", prefix=prefix)
+            P5 = P5_2 + P5_0
+
+            # P6_2 = sum(P5_2, P6_1)
+            P5_2_to_P6 = X.pool(P5_2, name="P5_2_to_P6", kernel=2, stride=2, pad=0)
+            P6_2 = X.merge_sum([P6_1, P5_2_to_P6], name="sum_P6_1_P5_2")
+            P6_2 = sepconvbnrelu(P6_2, dim_reduced, init, norm, name="P6_2", prefix=prefix)
+            P6 = P6_2 + P6_0
+
+            # P7_2 = sum(P6_2, P7_1)
+            P6_2_to_P7 = X.pool(P6_2, name="P6_2_to_P7", kernel=2, stride=2, pad=0)
+            P7_2 = X.merge_sum([P7_1, P6_2_to_P7], name="sum_P7_1_P6_2")
+            P7_2 = sepconvbnrelu(P7_2, dim_reduced, init, norm, name="P7_2", prefix=prefix)
             P7 = P7_2
 
             return {'S{}_P3'.format(stage): P3,
@@ -289,9 +363,10 @@ class RetinaNetHeadWithBN(RetinaNetHead):
         num_conv = self.p.num_conv or 4
 
         # classification subnet
+        cls_conv = conv_feat
         for i in range(1, num_conv + 1):
             cls_conv = X.conv(
-                data=conv_feat,
+                data=cls_conv,
                 kernel=3,
                 filter=conv_channel,
                 weight=eval("self.cls_conv%d_weight" % i),
@@ -323,9 +398,10 @@ class RetinaNetHeadWithBN(RetinaNetHead):
         num_conv = self.p.num_conv or 4
 
         # bbox subnet
+        bbox_conv = conv_feat
         for i in range(1, num_conv + 1):
             bbox_conv = X.conv(
-                data=conv_feat,
+                data=bbox_conv,
                 kernel=3,
                 filter=conv_channel,
                 weight=eval("self.bbox_conv%d_weight" % i),

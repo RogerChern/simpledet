@@ -1,6 +1,6 @@
 from models.retinanet.builder import RetinaNet as Detector
 from models.efficientnet.builder import EfficientNetB1FPN as Backbone
-from models.NASFPN.builder import TopDownBottomUpFPNNeck as Neck
+from models.NASFPN.builder import BiFPNNeck as Neck
 from models.NASFPN.builder import RetinaNetHeadWithBN as RpnHead
 from mxnext.complicate import normalizer_factory
 
@@ -21,7 +21,7 @@ def get_config(is_train):
 
 
     class NormalizeParam:
-        normalizer = normalizer_factory(type="localbn", eps=1e-4, mom=0.997)
+        normalizer = normalizer_factory(type="localbn", eps=1e-4, mom=0.9)
 
 
     class BackboneParam:
