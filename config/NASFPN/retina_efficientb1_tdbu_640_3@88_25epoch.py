@@ -118,7 +118,6 @@ def get_config(is_train):
         class optimizer:
             type = "sgd"
             lr = 0.005 / 8 * len(KvstoreParam.gpus) * KvstoreParam.batch_image
-            lr_mode = "cosine"
             momentum = 0.9
             wd = 4e-5
             clip_gradient = None
@@ -126,12 +125,13 @@ def get_config(is_train):
         class schedule:
             begin_epoch = 0
             end_epoch = 25
-            lr_iter = []
+            lr_iter = [14775 * 20 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image),
+                       14775 * 23 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)]
 
         class warmup:
             type = "gradual"
             lr = 0
-            iter = 15272 * 1 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image) // 3
+            iter = 14775 * 1 * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image) // 3
 
 
     class TestParam:
