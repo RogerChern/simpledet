@@ -51,13 +51,28 @@ def sepconvbnrelu(data, num_filter, init, norm, name, prefix):
     return data
 
 
+def convbnrelu(data, num_filter, init, norm, name, prefix):
+    """
+    :param data: data
+    :param num_filter: number of convolution filter
+    :param init: init method of conv weight
+    :param norm: normalizer
+    :param name: name
+    :return: 3x3dwconv-bn-relu-1x1pwconv-bn-relu
+    """
+    name = prefix + name
+    data = X.conv(data, name=name + '_conv', kernel=3, filter=num_filter, init=init)
+    data = norm(data, name=name + '_conv_bn')
+    data = X.relu(data, name=name + '_conv_relu')
+    return data
+
+
 class NASFPNNeck(Neck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
         self.neck = None
     
-    @staticmethod
-    def get_P0_features(c_features, p_names, dim_reduced, init, norm, kernel=1):
+    def get_P0_features(self, c_features, p_names, dim_reduced, init, norm, kernel=1):
         p_features = {}
         for c_feature, p_name in zip(c_features, p_names):
             p = X.conv(
@@ -72,8 +87,7 @@ class NASFPNNeck(Neck):
             p_features[p_name] = p
         return p_features
 
-    @staticmethod
-    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
+    def get_fused_P_feature(self, p_features, stage, dim_reduced, init, norm):
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -198,8 +212,7 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
     
-    @staticmethod
-    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
+    def get_fused_P_feature(self, p_features, stage, dim_reduced, init, norm):
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -286,8 +299,12 @@ class BiFPNNeck(NASFPNNeck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
     
-    @staticmethod
-    def get_fused_P_feature(p_features, stage, dim_reduced, init, norm):
+    def get_fused_P_feature(self, p_features, stage, dim_reduced, init, norm):
+        if self.p.conv_type == "normal":
+            conv = convbnrelu
+        else:
+            conv = sepconvbnrelu
+        
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -313,7 +330,6 @@ class BiFPNNeck(NASFPNNeck):
             P5_1_to_P4 = up2x(P5_1, "P5_1_to_P4")
             P4_1 = X.merge_sum([P4_0, P5_1_to_P4], name="sum_P4_0_P5_1")
             P4_1 = sepconvbnrelu(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
-            
 
             # P3_1
             P4_1_to_P3 = up2x(P4_1, name="P4_1_to_P3")
