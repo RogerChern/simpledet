@@ -58,7 +58,7 @@ def convbnrelu(data, num_filter, init, norm, name, prefix):
     :param init: init method of conv weight
     :param norm: normalizer
     :param name: name
-    :return: 3x3dwconv-bn-relu-1x1pwconv-bn-relu
+    :return: 3x3conv-bn-relu
     """
     name = prefix + name
     data = X.conv(data, name=name + '_conv', kernel=3, filter=num_filter, init=init)
@@ -67,11 +67,27 @@ def convbnrelu(data, num_filter, init, norm, name, prefix):
     return data
 
 
+def preact_convbnrelu(data, num_filter, init, norm, name, prefix):
+    """
+    :param data: data
+    :param num_filter: number of convolution filter
+    :param init: init method of conv weight
+    :param norm: normalizer
+    :param name: name
+    :return: relu-3x3conv-bn
+    """
+    name = prefix + name
+    data = X.relu(data, name=name + '_relu')
+    data = X.conv(data, name=name + '_conv', kernel=3, filter=num_filter, init=init)
+    data = norm(data, name=name + '_bn')
+    return data
+
+
 class NASFPNNeck(Neck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
         self.neck = None
-    
+
     def get_P0_features(self, c_features, p_names, dim_reduced, init, norm, kernel=1):
         p_features = {}
         for c_feature, p_name in zip(c_features, p_names):
@@ -136,7 +152,7 @@ class NASFPNNeck(Neck):
             P5_5 = X.merge_sum([gp_P4_4_P3_3, P5_0], name="sum_[gp_P4_4_P3_3]_P5_0")
             P5_5 = X.reluconvbn(P5_5, dim_reduced, init, norm, name="P5_5", prefix=prefix)
             P5 = P5_5
-            # P7_6 = sum(gp(P5_5, P4_2), P7_0) end node 
+            # P7_6 = sum(gp(P5_5, P4_2), P7_0) end node
             P4_2_to_P7 = X.pool(P4_2, name="P4_2_to_P7", kernel=8, stride=8, pad=0)
             P4_2_to_P7 = mx.sym.slice_like(P4_2_to_P7, P7_0)
             P5_5_to_P7 = X.pool(P5_5, name="P5_5_to_P7", kernel=4, stride=4, pad=0)
@@ -151,7 +167,7 @@ class NASFPNNeck(Neck):
                 scale=2,
                 sample_type='nearest',
                 name="P7_6_to_P6",
-                num_args=1                
+                num_args=1
             )
             P7_6_to_P6 = mx.sym.slice_like(P7_6_to_P6, P6_0)
             P5_5_to_P6 = X.pool(P5_5, name="p5_5_to_P6", kernel=2, stride=2, pad=0)
@@ -186,7 +202,7 @@ class NASFPNNeck(Neck):
         # 0 stage
         p0_names = ['S0_P3', 'S0_P4', 'S0_P5', 'S0_P6', 'S0_P7']
         p_features = self.get_P0_features(c_features, p0_names, dim_reduced, xavier_init, norm, S0_kernel)
-        
+
         # stack stage
         for i in range(num_stage):
             p_features = self.get_fused_P_feature(p_features, i + 1, dim_reduced, xavier_init, norm)
@@ -198,7 +214,7 @@ class NASFPNNeck(Neck):
             stride64=p_features['S{}_P6'.format(num_stage)],
             stride128=p_features['S{}_P7'.format(num_stage)]
         )
-        
+
         return self.neck
 
     def get_rpn_feature(self, rpn_feat):
@@ -211,7 +227,7 @@ class NASFPNNeck(Neck):
 class TopDownBottomUpFPNNeck(NASFPNNeck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
-    
+
     def get_fused_P_feature(self, p_features, stage, dim_reduced, init, norm):
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
@@ -298,13 +314,30 @@ class TopDownBottomUpFPNNeck(NASFPNNeck):
 class BiFPNNeck(NASFPNNeck):
     def __init__(self, pNeck):
         super().__init__(pNeck)
-    
+
+    def get_P0_features_impl(self, c_features, p_names, dim_reduced, init, norm, kernel=1):
+        if self.p.new_p0:
+            return self._get_P0_features_impl(c_features, p_names, dim_reduced, init, norm, kernel=1)
+        else:
+            return super().get_P0_features(c_features, p_names, dim_reduced, init, norm, kernel=1)
+
+    def _get_P0_features_impl(self, c_features, p_names, dim_reduced, init, norm, kernel=1):
+        p_features = {}
+        for c_feature, p_name in zip(c_features, p_names):
+            p = X.conv(c_feature, filter=dim_reduced, kernel=kernel, no_bias=False, init=init, name=p_name)
+            p = norm(p)
+            p = X.relu(p)
+            p_features[p_name] = p
+        return p_features
+
     def get_fused_P_feature(self, p_features, stage, dim_reduced, init, norm):
         if self.p.conv_type == "normal":
             conv = convbnrelu
+        elif self.p.conv_type == "preact":
+            conv = preact_convbnrelu
         else:
             conv = sepconvbnrelu
-        
+
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
             P3_0 = p_features['S{}_P3'.format(stage-1)] # s8
@@ -315,7 +348,7 @@ class BiFPNNeck(NASFPNNeck):
 
             # P7_1
             P7_1 = P7_0
-            
+
             # P6_1 = sum(P6_0, P7_1)
             P7_1_to_P6 = up2x(P7_1, "P7_1_to_P6")
 	    P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
@@ -334,7 +367,7 @@ class BiFPNNeck(NASFPNNeck):
             # P3_1
             P4_1_to_P3 = up2x(P4_1, name="P4_1_to_P3")
             P3_1 = X.merge_sum([P3_0, P4_1_to_P3], name="sum_P3_0_P4_1")
-            P3_1 = sepconvbnrelu(P3_0, dim_reduced, init, norm, name="P3_1", prefix=prefix)
+            P3_1 = sepconvbnrelu(P3_1, dim_reduced, init, norm, name="P3_1", prefix=prefix)
             P3_2 = P3_1
             P3 = P3_2
 
