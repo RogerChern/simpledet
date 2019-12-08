@@ -133,7 +133,7 @@ def get_config(is_train):
         class warmup:
             type = "gradual"
             lr = 0.001 / 8 * len(KvstoreParam.gpus) * KvstoreParam.batch_image
-            iter = int(14786 * 50 * 0.05) * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)
+            iter = int(14786 * 40 * 0.05) * 16 // (len(KvstoreParam.gpus) * KvstoreParam.batch_image)
             in_pct = True
 
 
