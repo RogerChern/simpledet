@@ -1,6 +1,7 @@
 import math
 import mxnet as mx
 import mxnext as X
+from functools import partial
 
 from mxnext.complicate import normalizer_factory
 from symbol.builder import Backbone, Neck
@@ -31,7 +32,7 @@ def merge_gp(f1, f2, name):
     return fuse_sum
 
 
-def sepconvbnrelu(data, num_filter, init, norm, name, prefix):
+def sepconvbnrelu(data, num_filter, init, norm, name, prefix, kernel=3):
     """
     :param data: data
     :param num_filter: number of convolution filter
@@ -41,7 +42,7 @@ def sepconvbnrelu(data, num_filter, init, norm, name, prefix):
     :return: 3x3dwconv-bn-relu-1x1pwconv-bn-relu
     """
     name = prefix + name
-    data = X.dwconv(data, name=name + '_dwconv', filter=num_filter, kernel=3, init=init)
+    data = X.dwconv(data, name=name + '_dwconv', filter=num_filter, kernel=kernel, init=init)
     data = norm(data, name=name + '_dwconv_bn')
     data = X.relu(data, name=name + '_dwconv_relu')
 
@@ -336,7 +337,8 @@ class BiFPNNeck(NASFPNNeck):
         elif self.p.conv_type == "preact":
             conv = preact_convbnrelu
         else:
-            conv = sepconvbnrelu
+            kernel = self.p.kernel or 3
+            conv = partial(sepconvbnrelu, kernel=kernel)
 
         prefix = "S{}_".format(stage)
         with mx.name.Prefix(prefix):
