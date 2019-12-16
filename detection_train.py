@@ -290,7 +290,10 @@ def train_net(config):
         aux_params=aux_params,
         begin_epoch=begin_epoch,
         num_epoch=end_epoch,
-        profile=profile
+        profile=profile,
+        use_param_momentum=pOpt.momentum_update,
+        param_momentum=(pOpt.momentum_update and pOpt.momentum_update.momentum) or -1,
+        zero_init_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.zero_init) or False
     )
 
     logging.info("Training has done")

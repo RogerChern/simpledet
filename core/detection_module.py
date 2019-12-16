@@ -277,7 +277,8 @@ class DetModule(BaseModule):
         return (self._arg_params, self._aux_params)
 
     def init_params(self, initializer=Uniform(0.01), arg_params=None, aux_params=None,
-                    allow_missing=False, force_init=False, allow_extra=False):
+                    allow_missing=False, force_init=False, allow_extra=False,
+                    use_param_momentum=False, zero_init_param_momentum=False):
         """Initializes the parameters and auxiliary states.
 
         Parameters
@@ -338,6 +339,20 @@ class DetModule(BaseModule):
         # copy the initialized parameters to devices
         self._exec_group.set_params(self._arg_params, self._aux_params,
                                     allow_extra=allow_extra)
+
+        if use_param_momentum:
+            self.arg_params_bank = {}
+            self.aux_params_bank = {}
+            for k in self._exec_group.param_names:
+                if zero_init_param_momentum:
+                    self.arg_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
+                else:
+                    self.arg_params_bank[k] = self._exec_group.execs[0].arg_dict[k].copy()
+            for k in self._exec_group.execs[0].aux_dict:
+                if zero_init_param_momentum:
+                    self.aux_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
+                else:
+                    self.aux_params_bank[k] = self._exec_group.execs[0].aux_dict[k].copy()
 
     def set_params(self, arg_params, aux_params, allow_missing=False, force_init=True,
                    allow_extra=False):
@@ -896,7 +911,8 @@ class DetModule(BaseModule):
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
-            validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False):
+            validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False,
+            use_param_momentum=False, param_momentum=0.99, zero_init_param_momentum=False):
 
         """Trains the module parameters.
         Checkout `Module Tutorial <http://mxnet.io/tutorials/basic/module.html>`_ to see
@@ -974,7 +990,8 @@ class DetModule(BaseModule):
         if monitor is not None:
             self.install_monitor(monitor)
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
-                         allow_missing=allow_missing, force_init=force_init)
+                         allow_missing=allow_missing, force_init=force_init, use_param_momentum=use_param_momentum,
+                         zero_init_param_momentum=zero_init_param_momentum)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
                             optimizer_params=optimizer_params)
 
@@ -1042,6 +1059,17 @@ class DetModule(BaseModule):
                     mx.profiler.set_state("stop")
                     mx.profiler.dump()
 
+                if use_param_momentum:
+                    arg_params = self._exec_group.execs[0].arg_dict
+                    aux_params = self._exec_group.execs[0].aux_dict
+                    for k in arg_params:
+                        if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
+                            self.arg_params_bank[k] = param_momentum * self.arg_params_bank[k] + \
+                                (1 - param_momentum) * arg_params[k]
+                    for k in aux_params:
+                        self.aux_params_bank[k] = param_momentum * self.aux_params_bank[k] + \
+                            (1 - param_momentum) * aux_params[k]
+
             # one epoch of training is finished
             for name, val in eval_name_vals:
                 self.logger.info('Epoch[%d] Train-%s=%f', epoch, name, val)
@@ -1054,7 +1082,10 @@ class DetModule(BaseModule):
 
             if epoch_end_callback is not None and self._kvstore.rank == 0:
                 for callback in _as_list(epoch_end_callback):
-                    callback(epoch, self.symbol, arg_params, aux_params)
+                    if use_param_momentum:
+                        callback(epoch, self.symbol, arg_params, aux_params, self.arg_params_bank, self.aux_params_bank)
+                    else:
+                        callback(epoch, self.symbol, arg_params, aux_params)
 
             # end of 1 epoch, reset the data-iter for another epoch
             train_data.reset()
