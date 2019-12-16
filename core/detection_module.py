@@ -344,7 +344,7 @@ class DetModule(BaseModule):
             self.arg_params_bank = {}
             self.aux_params_bank = {}
             for k in self._exec_group.param_names:
-                if zero_init_param_momentum:
+                if zero_init_param_momentum and k not in self._exec_group.fixed_param_names:
                     self.arg_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
                 else:
                     self.arg_params_bank[k] = self._exec_group.execs[0].arg_dict[k].copy()
