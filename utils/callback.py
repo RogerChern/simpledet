@@ -1,5 +1,6 @@
 import time
 import logging
+import numpy as np
 import mxnet as mx
 
 
@@ -91,6 +92,8 @@ def do_checkpoint(prefix):
     def _callback(iter_no, sym, arg, aux, arg1=None, aux1=None):
         mx.model.save_checkpoint(prefix, iter_no + 1, sym, arg, aux)
         if arg1 is not None and aux1 is not None:
+            arg1 = {k: v.astype(np.float32) for k, v in arg1.items()}
+            aux1 = {k: v.astype(np.float32) for k, v in aux1.items()}
             mx.model.save_checkpoint(prefix + "_momentum", iter_no + 1, sym, arg1, aux1)
     return _callback
 

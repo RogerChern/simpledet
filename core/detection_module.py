@@ -25,6 +25,7 @@ import logging
 import warnings
 from collections import namedtuple
 
+import numpy as np
 import mxnet
 
 from mxnet import metric
@@ -344,15 +345,19 @@ class DetModule(BaseModule):
             self.arg_params_bank = {}
             self.aux_params_bank = {}
             for k in self._exec_group.param_names:
+                print("init ema bank for arg %s" % k)
                 if zero_init_param_momentum and k not in self._exec_group.fixed_param_names:
                     self.arg_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
                 else:
                     self.arg_params_bank[k] = self._exec_group.execs[0].arg_dict[k].copy()
+                self.arg_params_bank[k] = self.arg_params_bank[k].astype(np.float32)
             for k in self._exec_group.execs[0].aux_dict:
+                print("init ema bank for aux %s" % k)
                 if zero_init_param_momentum:
                     self.aux_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
                 else:
                     self.aux_params_bank[k] = self._exec_group.execs[0].aux_dict[k].copy()
+                self.aux_params_bank[k] = self.aux_params_bank[k].astype(np.float32)
 
     def set_params(self, arg_params, aux_params, allow_missing=False, force_init=True,
                    allow_extra=False):
@@ -1065,10 +1070,10 @@ class DetModule(BaseModule):
                     for k in arg_params:
                         if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
                             self.arg_params_bank[k] = param_momentum * self.arg_params_bank[k] + \
-                                (1 - param_momentum) * arg_params[k]
+                                (1 - param_momentum) * arg_params[k].astype(np.float32)
                     for k in aux_params:
                         self.aux_params_bank[k] = param_momentum * self.aux_params_bank[k] + \
-                            (1 - param_momentum) * aux_params[k]
+                            (1 - param_momentum) * aux_params[k].astype(np.float32)
 
             # one epoch of training is finished
             for name, val in eval_name_vals:
