@@ -917,7 +917,8 @@ class DetModule(BaseModule):
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
             validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False,
-            use_param_momentum=False, param_momentum=0.99, zero_init_param_momentum=False):
+            use_param_momentum=False, param_momentum=0.99, zero_init_param_momentum=False,
+            swap_param_momentum=False):
 
         """Trains the module parameters.
         Checkout `Module Tutorial <http://mxnet.io/tutorials/basic/module.html>`_ to see
@@ -1083,12 +1084,18 @@ class DetModule(BaseModule):
 
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
-            self.set_params(arg_params, aux_params)
+            # bank is always fp32 while params may be either fp32 or fp16
+            arg_bank_to_device = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
+            aux_bank_to_device = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
+            if swap_param_momentum:
+                self.set_params(arg_bank_to_device, aux_bank_to_device)
+            else:
+                self.set_params(arg_params, aux_params)
 
             if epoch_end_callback is not None and self._kvstore.rank == 0:
                 for callback in _as_list(epoch_end_callback):
                     if use_param_momentum:
-                        callback(epoch, self.symbol, arg_params, aux_params, self.arg_params_bank, self.aux_params_bank)
+                        callback(epoch, self.symbol, arg_params, aux_params, arg_bank_to_device, aux_bank_to_device)
                     else:
                         callback(epoch, self.symbol, arg_params, aux_params)
 

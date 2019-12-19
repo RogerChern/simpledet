@@ -293,7 +293,8 @@ def train_net(config):
         profile=profile,
         use_param_momentum=pOpt.momentum_update,
         param_momentum=(pOpt.momentum_update and pOpt.momentum_update.momentum) or -1,
-        zero_init_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.zero_init) or False
+        zero_init_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.zero_init) or False,
+        swap_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.swap) or False
     )
 
     logging.info("Training has done")
