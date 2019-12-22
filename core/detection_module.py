@@ -1084,9 +1084,10 @@ class DetModule(BaseModule):
 
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
-            # bank is always fp32 while params may be either fp32 or fp16
-            arg_bank_to_device = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
-            aux_bank_to_device = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
+            if use_param_momentum:
+                # bank is always fp32 while params may be either fp32 or fp16
+                arg_bank_to_device = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
+                aux_bank_to_device = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
             if swap_param_momentum:
                 self.set_params(arg_bank_to_device, aux_bank_to_device)
             else:
