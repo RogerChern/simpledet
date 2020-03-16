@@ -120,54 +120,102 @@ def trident_resnet_v1b_unit(input, name, id, filter, stride, dilate, proj, **kwa
 
 
 def get_trident_resnet_backbone(unit, helper):
+    def build_trident_stage(input, num_block, num_tri, filter, stride, prefix, p):
+        # construct leading res blocks
+        data = input
+        for i in range(1, num_block - num_tri + 1):
+            data = unit(
+                input=data,
+                name="%s_unit%s" % (prefix, i),
+                id=None,
+                filter=filter,
+                stride=stride if i == 1 else 1,
+                proj=True if i == 1 else False,
+                dilate=1,
+                params=p)
+
+        # construct parallel branches
+        cs = []
+        for dil, id in zip(p.branch_dilates, p.branch_ids):
+            c = data  # reset c to the output of last stage
+            for i in range(num_block - num_tri + 1, num_block + 1):
+                c = trident_resnet_v1b_unit(
+                    input=c,
+                    name="%s_unit%s" % (prefix, i),
+                    id=id,
+                    filter=filter,
+                    stride=stride if i == 1 else 1,
+                    proj=True if i == 1 else False,
+                    dilate=dil,
+                    params=p)
+            cs.append(c)
+        # stack branch outputs on the batch dimension
+        c = mx.sym.stack(*cs, axis=1)
+        c = mx.sym.reshape(c, shape=(-3, -2))
+        return c
+
     class TridentResNetC4(Backbone):
         def __init__(self, pBackbone):
             super().__init__(pBackbone)
             p = self.p
 
             num_c2, num_c3, num_c4, _ = helper.depth_config[p.depth]
-            num_tri = p.num_c4_block or (num_c4 - 1)
+            branch_stage = p.branch_stage or 4
+            num_tri = eval("p.num_c%d_block" % branch_stage) or (eval("num_c%d" % branch_stage) - 1)
 
             ################### construct symbolic graph ###################
             data = X.var("data")
             if p.fp16:
                 data = data.astype("float16")
             c1 = helper.resnet_c1(data, p.normalizer)
-            c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
-            c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
 
-            # construct leading res blocks
-            data = c3
-            for i in range(1, num_c4 - num_tri + 1):
-                data = unit(
-                    input=data,
-                    name="stage3_unit%s" % i,
-                    id=None,
-                    filter=1024,
-                    stride=2 if i == 1 else 1,
-                    proj=True if i == 1 else False,
-                    dilate=1,
-                    params=p)
+            if branch_stage == 2:
+                c2 = build_trident_stage(c1, num_c2, num_tri, 256, 1, "stage1", p)
+                c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
+                c4 = helper.resnet_c4(c3, num_c4, 2, 1, p.normalizer)
+            elif branch_stage == 3:
+                c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
+                c3 = build_trident_stage(c2, num_c3, num_tri, 512, 2, "stage2", p)
+                c4 = helper.resnet_c4(c3, num_c4, 2, 1, p.normalizer)
+            elif branch_stage == 4:
+                c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
+                c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
+                c4 = build_trident_stage(c3, num_c4, num_tri, 1024, 2, "stage3", p)
+            else:
+                raise ValueError("Unknown branch stage: %d" % branch_stage)
 
-            # construct parallel branches
-            c4s = []
-            for dil, id in zip(p.branch_dilates, p.branch_ids):
-                c4 = data  # reset c4 to the output of last stage
-                for i in range(num_c4 - num_tri + 1, num_c4 + 1):
-                    c4 = trident_resnet_v1b_unit(
-                        input=c4,
-                        name="stage3_unit%s" % i,
-                        id=id,
-                        filter=1024,
-                        stride=2 if i == 1 else 1,
-                        proj=True if i == 1 else False,
-                        dilate=dil,
-                        params=p)
-                c4s.append(c4)
+            # # construct leading res blocks
+            # data = c3
+            # for i in range(1, num_c4 - num_tri + 1):
+            #     data = unit(
+            #         input=data,
+            #         name="stage3_unit%s" % i,
+            #         id=None,
+            #         filter=1024,
+            #         stride=2 if i == 1 else 1,
+            #         proj=True if i == 1 else False,
+            #         dilate=1,
+            #         params=p)
 
-            # stack branch outputs on the batch dimension
-            c4 = mx.sym.stack(*c4s, axis=1)
-            c4 = mx.sym.reshape(c4, shape=(-3, -2))
+            # # construct parallel branches
+            # c4s = []
+            # for dil, id in zip(p.branch_dilates, p.branch_ids):
+            #     c4 = data  # reset c4 to the output of last stage
+            #     for i in range(num_c4 - num_tri + 1, num_c4 + 1):
+            #         c4 = trident_resnet_v1b_unit(
+            #             input=c4,
+            #             name="stage3_unit%s" % i,
+            #             id=id,
+            #             filter=1024,
+            #             stride=2 if i == 1 else 1,
+            #             proj=True if i == 1 else False,
+            #             dilate=dil,
+            #             params=p)
+            #     c4s.append(c4)
+
+            # # stack branch outputs on the batch dimension
+            # c4 = mx.sym.stack(*c4s, axis=1)
+            # c4 = mx.sym.reshape(c4, shape=(-3, -2))
 
             self.symbol = c4
 
