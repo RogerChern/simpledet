@@ -21,14 +21,14 @@ for host in ${host_array[@]}; do
 
     # check availablity (retreat if remote host is in use)
     echo "check availability of $host"
-    for x in $(ssh $host nvidia-smi --query-gpu=utilization.gpu --format=csv,nounits,noheader); do 
+    for x in $(ssh $host nvidia-smi --query-gpu=utilization.gpu --format=csv,nounits,noheader); do
 	x="${x//[$'\t\r\n ']}"  # remove trailing whitespace
-	if [ $x -gt 10 ]; then 
-	    echo "$host has gpu utilization of $x%"; 
+	if [ $x -gt 10 ]; then
+	    echo "$host has gpu utilization of $x%";
 	    exit -1
-        fi;  
+        fi;
     done
-    
+
     # cleanup potentially dead python process (march since we checked it)
     ssh -q $host pkill python
 done
@@ -36,7 +36,7 @@ done
 gpucount=8
 num_node=${#host_array[@]}
 num_servers=${num_node}
-root_dir="/mnt/tscpfs/yuntao.chen/simpledet/simpledet_open"
+root_dir="/mnt/tscpfs2/yuntao.chen/simpledet_open"
 sync_dir="/tmp/simpledet_sync"
 singularity_image=/mnt/tscpfs/yuntao.chen/simpledet.img
 
@@ -49,7 +49,7 @@ fi
 # dump hosts in a hostfile for launch.py
 IFS=,
 output=""
-for id in $hosts 
+for id in $hosts
 do output+="${id}\n"
 done
 unset IFS
