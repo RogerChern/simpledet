@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument('--result-path', type=str, default=None)
     parser.add_argument('--classwise', action='store_true')
     parser.add_argument('--no-eval', action='store_true')
+    parser.add_argument('--ema', action='store_true')
     args = parser.parse_args()
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
@@ -95,7 +96,7 @@ if __name__ == "__main__":
         data_names = [k[0] for k in loader.provide_data]
 
         if index_split == 0:
-            arg_params, aux_params = load_checkpoint(pTest.model.prefix, args.epoch or pTest.model.epoch)
+            arg_params, aux_params = load_checkpoint(pTest.model.prefix + ("_momentum" if args.ema else ""), args.epoch or pTest.model.epoch)
             if pModel.process_weight is not None:
                 pModel.process_weight(sym, arg_params, aux_params)
 
