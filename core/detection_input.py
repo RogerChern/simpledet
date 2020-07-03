@@ -1,6 +1,8 @@
 from __future__ import division
 from __future__ import print_function
 
+import random
+
 import cv2
 import numpy as np
 import mxnet as mx
@@ -122,6 +124,81 @@ class Resize2DImageBbox(DetectionAugmentation):
         # exactly as opencv
         h, w = image.shape[:2]
         input_record["im_info"] = np.array([round(h * scale), round(w * scale), scale], dtype=np.float32)
+
+
+class Rotate2DImageBbox(DetectionAugmentation):
+    """
+    input: image, ndarray(h, w, rgb)
+           gt_bbox, ndarry(n, 5)
+    output: image, ndarray(h', w', rgb)
+            im_info, tuple(h', w', scale)
+            gt_bbox, ndarray(n, 5)
+    """
+
+    def __init__(self, pResize):
+        super().__init__()
+        self.p = pResize  # type: ResizeParam
+
+    def apply(self, input_record):
+        p = self.p
+
+        image = input_record["image"]
+        gt_bbox = input_record["gt_bbox"].astype(np.float32)
+
+        short = min(image.shape[:2])
+        long = max(image.shape[:2])
+        scale = min(p.short / short, p.long / long)
+
+        input_record["image"] = cv2.resize(image, None, None, scale, scale,
+                                           interpolation=cv2.INTER_LINEAR)
+        # make sure gt boxes do not overflow
+        gt_bbox[:, :4] = gt_bbox[:, :4] * scale
+        if image.shape[0] < image.shape[1]:
+            gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]], 0, p.long)
+            gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]], 0, p.short)
+        else:
+            gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]], 0, p.short)
+            gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]], 0, p.long)
+        input_record["gt_bbox"] = gt_bbox
+
+        # exactly as opencv
+        h, w = image.shape[:2]
+        input_record["im_info"] = np.array([round(h * scale), round(w * scale), scale], dtype=np.float32)
+
+
+class Stretch2DImageBbox(DetectionAugmentation):
+    """
+    input: image, ndarray(h, w, rgb)
+           gt_bbox, ndarry(n, 5)
+    output: image, ndarray(h', w', rgb)
+            im_info, tuple(h', w', scale)
+            gt_bbox, ndarray(n, 5)
+    """
+
+    def __init__(self, pStretch):
+        super().__init__()
+        self.p = pStretch  # type: ResizeParam
+
+    def apply(self, input_record):
+        p = self.p
+
+        image = input_record["image"]
+        gt_bbox = input_record["gt_bbox"].astype(np.float32)
+
+        ratio = random.uniform(*p.ratio_range)  # w / h
+        if ratio < 1:
+            # stretch height
+            xscale, yscale = 1, 1 / ratio  # instead of shrink x, we stretch y to preserve more info
+        else:
+            # stretch width
+            xscale, yscale = ratio, 1
+
+        input_record["image"] = cv2.resize(image, None, None, xscale, yscale,
+                                           interpolation=cv2.INTER_LINEAR)
+        # make sure gt boxes do not overflow
+        gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]] * xscale, 0, input_record["image"].shape[1])
+        gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]] * yscale, 0, input_record["image"].shape[0])
+        input_record["gt_bbox"] = gt_bbox
 
 
 class Resize2DImage(DetectionAugmentation):
@@ -907,10 +984,14 @@ def visualize_anchor_loader_old(batch_data):
     cv2.waitKey()
 
 
-def visualize_original_input(roirec):
+def visualize_original_input(roirec, no_display=False):
     image = cv2.imread(roirec["image_url"], cv2.IMREAD_COLOR)
     gt_bbox = roirec["gt_bbox"]
     for box in gt_bbox:
         cv2.rectangle(image, tuple(box[:2]), tuple(box[2:4]), color=(0, 255, 0))
-    cv2.imshow("image", image)
-    cv2.waitKey()
+    if no_display:
+        from uuid import uuid4
+        cv2.imwrite("debug_{}.jpg".format(uuid4()), image)
+    else:
+        cv2.imshow("imags", image)
+        cv2.waitKey()
