@@ -164,7 +164,7 @@ class FPNRpnHead(RpnHead):
 
         cls_logit_dict, bbox_delta_dict = self.get_output(conv_fpn_feat)
 
-        scale_loss_shift = 128.0 if p.fp16 else 1.0
+        scale_loss_shift = 2048.0 if p.fp16 else 1.0
 
         rpn_cls_logit_list = []
         rpn_bbox_delta_list = []

@@ -387,7 +387,7 @@ class MaskFasterRcnnHead(object):
 
         mask_fcn_logit = self.get_output(conv_feat)
 
-        scale_loss_shift = 128.0 if pMask.fp16 else 1.0
+        scale_loss_shift = 2048.0 if pMask.fp16 else 1.0
 
         mask_fcn_logits = mx.sym.split(mask_fcn_logit, num_outputs=batch_image, axis=0)
         mask_inds = mx.sym.split(mask_ind, num_outputs=batch_image, axis=0, squeeze_axis=True)

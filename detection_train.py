@@ -269,7 +269,7 @@ def train_net(config):
 
     if pKv.fp16:
         optimizer_params['multi_precision'] = True
-        optimizer_params['rescale_grad'] /= 128.0
+        optimizer_params['rescale_grad'] /= 2048.0
 
     profile = pGen.profile or False
     if profile:

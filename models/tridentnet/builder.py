@@ -311,7 +311,7 @@ class TridentRpnHead(RpnHead):
 
         cls_logit, bbox_delta = self.get_output(conv_feat)
 
-        scale_loss_shift = 128.0 if p.fp16 else 1.0
+        scale_loss_shift = 2048.0 if p.fp16 else 1.0
 
         # classification loss
         cls_logit_reshape = X.reshape(

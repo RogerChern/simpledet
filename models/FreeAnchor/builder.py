@@ -80,7 +80,7 @@ class FreeAnchorRetinaNetHead(RetinaNetHead):
         bbox_delta_reshape_list = []
         feat_list = []
 
-        scale_loss_shift = 128.0 if p.fp16 else 1.0
+        scale_loss_shift = 2048.0 if p.fp16 else 1.0
 
         # reshape logit and delta
         for s in stride:

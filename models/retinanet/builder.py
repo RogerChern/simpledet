@@ -252,7 +252,7 @@ class RetinaNetHead(RpnHead):
         cls_logit_reshape_list = []
         bbox_delta_reshape_list = []
 
-        scale_loss_shift = 128.0 if p.fp16 else 1.0
+        scale_loss_shift = 2048.0 if p.fp16 else 1.0
         if sync_loss:
             fg_count = X.var("rpn_fg_count") * image_per_device
             fg_count = mx.sym.slice_axis(fg_count, axis=0, begin=0, end=1)
