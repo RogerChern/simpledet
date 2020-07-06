@@ -1,3 +1,4 @@
+import datetime
 import time
 import logging
 import numpy as np
@@ -23,10 +24,11 @@ class Speedometer(object):
         if self.init:
             if count % self.frequent == 0:
                 speed = self.frequent * self.batch_size / (time.time() - self.tic)
+                eta = int((time.time() - self.tic) * (self.total_iter - param.iter) / self.frequent)
                 if param.eval_metric is not None:
                     name, value = param.eval_metric.get()
-                    s = "Epoch[%d] Batch [%d]\tIter: %d/%d\tLr: %.5f\tSpeed: %.2f samples/sec\tTrain-" % \
-                        (param.epoch, count, param.iter, self.total_iter, param.lr, speed)
+                    s = "Epoch[%d] Batch [%d]\tIter: %d/%d\tLr: %.5f\tSpeed: %.2f samples/s\tETA: %s(%ds)\t" % \
+                        (param.epoch, count, param.iter, self.total_iter, param.lr, speed, datetime.timedelta(seconds=eta), eta)
                     for n, v in zip(name, value):
                         s += "%s=%f,\t" % (n, v)
                     logging.info(s)
