@@ -78,12 +78,13 @@ class PyramidAnchorTarget2DBase(AnchorTarget2D):
 
         im_info = input_record["im_info"]
         gt_bbox = input_record["gt_bbox"]
+        orientation = input_record["orientation"]
         assert isinstance(gt_bbox, np.ndarray)
         assert gt_bbox.dtype == np.float32
         valid = np.where(gt_bbox[:, 0] != -1)[0]
         gt_bbox = gt_bbox[valid]
 
-        valid_index, valid_anchor = self._gather_valid_anchor(im_info)
+        valid_index, valid_anchor = self._gather_valid_anchor(im_info, orientation)
         cls_label, reg_target, reg_weight = \
             self._assign_label_to_anchor(valid_anchor, gt_bbox,
                                          p.assign.neg_thr, p.assign.pos_thr, p.assign.min_pos_thr)
@@ -152,8 +153,7 @@ class PyramidAnchorTarget2D(PyramidAnchorTarget2DBase):
         cls_label, reg_target, reg_weight = \
             self.anchor_target_2d.apply(input_record)
 
-        im_info = input_record["im_info"]
-        h, w = im_info[:2]
+        orientation = input_record["orientation"]
 
         cls_label_list = []
         reg_target_list = []
@@ -169,7 +169,7 @@ class PyramidAnchorTarget2D(PyramidAnchorTarget2DBase):
             bbox_target: (h * w * A, 4) -> (A * 4, h * w)
             bbox_weight: (h * w * A, 4) -> (A * 4, h * w)
             """
-            if h >= w:
+            if orientation == "vertical":
                 fh, fw = p.generate.long, p.generate.short
             else:
                 fh, fw = p.generate.short, p.generate.long

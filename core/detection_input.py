@@ -656,7 +656,7 @@ class AnchorTarget2D(DetectionAugmentation):
         cls_label, reg_target, reg_weight = \
             self._scatter_valid_anchor(valid_index, cls_label, reg_target, reg_weight)
 
-        if orientation:
+        if orientation == "vertical":
             fh, fw = p.generate.long, p.generate.short
         else:
             fh, fw = p.generate.short, p.generate.long
