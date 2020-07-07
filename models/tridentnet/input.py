@@ -58,6 +58,7 @@ class TridentAnchorTarget2D(AnchorTarget2D):
 
         im_info = input_record["im_info"]
         gt_bbox = input_record["gt_bbox"]
+        orientation = input_record["orientation"]
         valid_ranges = input_record["valid_ranges"]
         assert isinstance(gt_bbox, np.ndarray)
         assert gt_bbox.dtype == np.float32
@@ -69,12 +70,12 @@ class TridentAnchorTarget2D(AnchorTarget2D):
             gt_bbox = gt_bbox[:, :4]
 
         h, w = im_info[:2]
-        if h >= w:
+        if orientation == "vertical":
             fh, fw = p.generate.long, p.generate.short
         else:
             fh, fw = p.generate.short, p.generate.long
 
-        valid_index, valid_anchor = self._gather_valid_anchor(im_info)
+        valid_index, valid_anchor = self._gather_valid_anchor(im_info, orientation)
 
         valid_cls_label, valid_anchor_label = \
             self._assign_label_to_anchor(valid_anchor, gt_bbox,

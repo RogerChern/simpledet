@@ -104,16 +104,23 @@ class Resize2DImageBbox(DetectionAugmentation):
 
         image = input_record["image"]
         gt_bbox = input_record["gt_bbox"].astype(np.float32)
+        if "orientation" in input_record:
+            orientation = input_record["orientation"]
+        else:
+            h, w = image.shape[:2]
+            orientation = "vertical" if h >= w else "horizontal"
 
-        short = min(image.shape[:2])
-        long = max(image.shape[:2])
+        if orientation == "vertical":
+            long, short = image.shape[:2]
+        else:
+            short, long = image.shape[:2]
         scale = min(p.short / short, p.long / long)
 
         input_record["image"] = cv2.resize(image, None, None, scale, scale,
                                            interpolation=cv2.INTER_LINEAR)
         # make sure gt boxes do not overflow
         gt_bbox[:, :4] = gt_bbox[:, :4] * scale
-        if image.shape[0] < image.shape[1]:
+        if orientation == "horizontal":
             gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]], 0, p.long)
             gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]], 0, p.short)
         else:
@@ -135,35 +142,27 @@ class Rotate2DImageBbox(DetectionAugmentation):
             gt_bbox, ndarray(n, 5)
     """
 
-    def __init__(self, pResize):
+    def __init__(self, pRotate):
         super().__init__()
-        self.p = pResize  # type: ResizeParam
+        self.p = pRotate
+        from albumentations import Rotate, BboxParams, Compose
+        self.transform = Compose(
+            [Rotate(limit=self.p.limit, p=self.p.prob or 1)], 
+            bbox_params=BboxParams(format='pascal_voc', label_fields=['gt_cls']))
 
     def apply(self, input_record):
-        p = self.p
-
         image = input_record["image"]
         gt_bbox = input_record["gt_bbox"].astype(np.float32)
+        gt_cls = input_record["gt_class"]
 
-        short = min(image.shape[:2])
-        long = max(image.shape[:2])
-        scale = min(p.short / short, p.long / long)
-
-        input_record["image"] = cv2.resize(image, None, None, scale, scale,
-                                           interpolation=cv2.INTER_LINEAR)
-        # make sure gt boxes do not overflow
-        gt_bbox[:, :4] = gt_bbox[:, :4] * scale
-        if image.shape[0] < image.shape[1]:
-            gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]], 0, p.long)
-            gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]], 0, p.short)
-        else:
-            gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]], 0, p.short)
-            gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]], 0, p.long)
-        input_record["gt_bbox"] = gt_bbox
-
-        # exactly as opencv
-        h, w = image.shape[:2]
-        input_record["im_info"] = np.array([round(h * scale), round(w * scale), scale], dtype=np.float32)
+        # filter bbox for albumentation
+        gt_bbox_valid = (gt_bbox[:, 2] > gt_bbox[:, 0]) & (gt_bbox[:, 3] > gt_bbox[:, 1])
+        gt_bbox = gt_bbox[gt_bbox_valid]
+        gt_cls = gt_cls[gt_bbox_valid]
+        input_record["gt_class"] = gt_cls
+        augmented = self.transform(image=image, bboxes=gt_bbox, gt_cls=gt_cls)
+        input_record["image"] = augmented["image"]
+        input_record["gt_bbox"] = np.asarray(augmented["bboxes"], dtype=np.float32)
 
 
 class Stretch2DImageBbox(DetectionAugmentation):
@@ -181,24 +180,32 @@ class Stretch2DImageBbox(DetectionAugmentation):
 
     def apply(self, input_record):
         p = self.p
+        prob = p.prob or 1
 
         image = input_record["image"]
         gt_bbox = input_record["gt_bbox"].astype(np.float32)
 
-        ratio = random.uniform(*p.ratio_range)  # w / h
-        if ratio < 1:
-            # stretch height
-            xscale, yscale = 1, 1 / ratio  # instead of shrink x, we stretch y to preserve more info
+        if random.uniform(0, 1) < prob:
+            ratio = random.uniform(*p.ratio_range)  # w / h
+            if ratio < 1:
+                # stretch height
+                xscale, yscale = 1, 1 / ratio  # instead of shrink x, we stretch y to preserve more info
+            else:
+                # stretch width
+                xscale, yscale = ratio, 1
         else:
-            # stretch width
-            xscale, yscale = ratio, 1
+            xscale, yscale = 1, 1
 
         input_record["image"] = cv2.resize(image, None, None, xscale, yscale,
                                            interpolation=cv2.INTER_LINEAR)
+        h, w = input_record["image"].shape[:2]
+
         # make sure gt boxes do not overflow
-        gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]] * xscale, 0, input_record["image"].shape[1])
-        gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]] * yscale, 0, input_record["image"].shape[0])
+        gt_bbox[:, [0, 2]] = np.clip(gt_bbox[:, [0, 2]] * xscale, 0, w)
+        gt_bbox[:, [1, 3]] = np.clip(gt_bbox[:, [1, 3]] * yscale, 0, h)
         input_record["gt_bbox"] = gt_bbox
+        input_record["h"] = h
+        input_record["w"] = w
 
 
 class Resize2DImage(DetectionAugmentation):
@@ -399,9 +406,8 @@ class Pad2DImageBbox(DetectionAugmentation):
         image = input_record["image"]
         gt_bbox = input_record["gt_bbox"]
 
-        origin_h, origin_w = input_record["h"], input_record["w"]
         h, w = image.shape[:2]
-        shape = (p.long, p.short, 3) if origin_h >= origin_w \
+        shape = (p.long, p.short, 3) if input_record["orientation"] == "vertical" \
             else (p.short, p.long, 3)
 
         padded_image = np.zeros(shape, dtype=np.float32)
@@ -604,9 +610,9 @@ class AnchorTarget2D(DetectionAugmentation):
 
         return reg_target, reg_weight
 
-    def _gather_valid_anchor(self, image_info):
+    def _gather_valid_anchor(self, image_info, orientation):
         h, w = image_info[:2]
-        all_anchor = self.v_all_anchor if h >= w else self.h_all_anchor
+        all_anchor = self.v_all_anchor if orientation == "vertical" else self.h_all_anchor
         allowed_border = self.p.assign.allowed_border
         valid_index = np.where((all_anchor[:, 0] >= -allowed_border) &
                                (all_anchor[:, 1] >= -allowed_border) &
@@ -632,6 +638,7 @@ class AnchorTarget2D(DetectionAugmentation):
 
         im_info = input_record["im_info"]
         gt_bbox = input_record["gt_bbox"]
+        orientation = input_record["orientation"]
         assert isinstance(gt_bbox, np.ndarray)
         assert gt_bbox.dtype == np.float32
         valid = np.where(gt_bbox[:, 0] != -1)[0]
@@ -640,7 +647,7 @@ class AnchorTarget2D(DetectionAugmentation):
         if gt_bbox.shape[1] == 5:
             gt_bbox = gt_bbox[:, :4]
 
-        valid_index, valid_anchor = self._gather_valid_anchor(im_info)
+        valid_index, valid_anchor = self._gather_valid_anchor(im_info, orientation)
         cls_label, anchor_label = \
             self._assign_label_to_anchor(valid_anchor, gt_bbox,
                                          p.assign.neg_thr, p.assign.pos_thr, p.assign.min_pos_thr)
@@ -649,8 +656,7 @@ class AnchorTarget2D(DetectionAugmentation):
         cls_label, reg_target, reg_weight = \
             self._scatter_valid_anchor(valid_index, cls_label, reg_target, reg_weight)
 
-        h, w = im_info[:2]
-        if h >= w:
+        if orientation:
             fh, fw = p.generate.long, p.generate.short
         else:
             fh, fw = p.generate.short, p.generate.long
@@ -960,8 +966,10 @@ class AnchorLoader(mx.io.DataIter):
         v_roidb, h_roidb = [], []
         for roirec in roidb:
             if roirec["h"] >= roirec["w"]:
+                roirec["orientation"] = "vertical"
                 v_roidb.append(roirec)
             else:
+                roirec["orientation"] = "horizontal"
                 h_roidb.append(roirec)
         return v_roidb, h_roidb
 

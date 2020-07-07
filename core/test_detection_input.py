@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import pickle as pkl
-from detection_input import Stretch2DImageBbox
+from detection_input import Stretch2DImageBbox, Rotate2DImageBbox
 
 
 def visualize_original_input(input_record, no_display=False):
@@ -25,6 +25,7 @@ def prepare_input_list():
         input_record = {}
         input_record['image'] = cv2.imdecode(np.asarray(bytearray(roirec['image_bytes']), dtype=np.uint8), cv2.IMREAD_COLOR)
         input_record['gt_bbox'] = roirec['gt_bbox']
+        input_record['gt_class'] = roirec['gt_class']
         input_list.append(input_record)
     return input_list
 
@@ -32,15 +33,28 @@ def prepare_input_list():
 def test_stretch_2d_image_box():
     input_list = prepare_input_list()
 
-    class StretchParam:
+    class Param:
        ratio_range = (1 / 2, 2 / 1) 
 
-    stretch = Stretch2DImageBbox(StretchParam)
+    transform = Stretch2DImageBbox(Param)
 
     for input_record in input_list: 
-        stretch.apply(input_record)
+        transform.apply(input_record)
+        visualize_original_input(input_record, no_display=True)
+
+
+def test_rotate_2d_image_box():
+    input_list = prepare_input_list()
+
+    class Param:
+       limit = 45
+
+    transform = Rotate2DImageBbox(Param)
+
+    for input_record in input_list: 
+        transform.apply(input_record)
         visualize_original_input(input_record, no_display=True)
 
 
 if __name__ == '__main__':
-    test_stretch_2d_image_box()
+    test_rotate_2d_image_box()
