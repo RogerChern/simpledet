@@ -1,8 +1,10 @@
 import argparse
+import datetime
 import importlib
 import math
 import os
 import pickle as pkl
+import time
 from functools import reduce
 from queue import Queue
 from threading import Thread
@@ -42,6 +44,10 @@ if __name__ == "__main__":
     pModel = patch_config_as_nothrow(pModel)
     pOpt = patch_config_as_nothrow(pOpt)
     pTest = patch_config_as_nothrow(pTest)
+
+    from utils.logger import config_logger
+    time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
+    config_logger(os.path.join(save_path, "log_rpn_test_%s.txt" % time_str))
 
     sym = pModel.rpn_test_symbol
     sym.save(pTest.model.prefix + "_rpn_test.json")
@@ -120,7 +126,6 @@ if __name__ == "__main__":
                 w.daemon = True
                 w.start()
 
-        import time
         t1_s = time.time()
 
         def data_enqueue(loader, data_queue):

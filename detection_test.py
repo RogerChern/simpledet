@@ -1,6 +1,8 @@
+import datetime
 import os
 import math
 import pprint
+import time
 
 from core.detection_module import DetModule
 from core.detection_input import Loader
@@ -49,6 +51,10 @@ if __name__ == "__main__":
     pModel = patch_config_as_nothrow(pModel)
     pOpt = patch_config_as_nothrow(pOpt)
     pTest = patch_config_as_nothrow(pTest)
+
+    from utils.logger import config_logger
+    time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
+    config_logger(os.path.join(save_path, "log_det_test_%s.txt" % time_str))
 
     sym = pModel.test_symbol
 
@@ -157,7 +163,6 @@ if __name__ == "__main__":
                 w.daemon = True
                 w.start()
 
-        import time
         t1_s = time.time()
 
         def data_enqueue(loader, data_queue):

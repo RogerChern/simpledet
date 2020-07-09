@@ -1,9 +1,11 @@
 import argparse
+import datetime
 import importlib
 import logging
 import os
 import pprint
 import pickle as pkl
+import time
 from functools import reduce
 
 from core.detection_module import DetModule
@@ -15,6 +17,7 @@ from utils.patch_config import patch_config_as_nothrow
 
 import mxnet as mx
 import numpy as np
+
 
 def train_net(config):
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
@@ -47,7 +50,8 @@ def train_net(config):
     os.makedirs(save_path, exist_ok=True)
 
     from utils.logger import config_logger
-    config_logger(os.path.join(save_path, "log.txt"))
+    time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
+    config_logger(os.path.join(save_path, "log_train_%s.txt" % time_str))
 
     model_prefix = os.path.join(save_path, "checkpoint")
 
@@ -156,7 +160,6 @@ def train_net(config):
 
 
     if pModel.random:
-        import time
         mx.random.seed(int(time.time()))
         np.random.seed(int(time.time()))
 

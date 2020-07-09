@@ -1,9 +1,13 @@
 import argparse
+import datetime
 import importlib
+import json
 import math
 import os
 import pprint
 import pickle as pkl
+import shutil
+import time
 from functools import reduce
 from queue import Queue
 from threading import Thread
@@ -15,10 +19,6 @@ from utils.patch_config import patch_config_as_nothrow
 
 import mxnet as mx
 import numpy as np
-
-import json
-import shutil
-import time
 
 
 def parse_args():
@@ -47,6 +47,10 @@ if __name__ == "__main__":
     pModel = patch_config_as_nothrow(pModel)
     pOpt = patch_config_as_nothrow(pOpt)
     pTest = patch_config_as_nothrow(pTest)
+
+    from utils.logger import config_logger
+    time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
+    config_logger(os.path.join(save_path, "log_mask_test_%s.txt" % time_str))
 
     sym = pModel.test_symbol
     sym.save(pTest.model.prefix + "_mask_test.json")
@@ -142,8 +146,6 @@ if __name__ == "__main__":
             for w in workers:
                 w.daemon = True
                 w.start()
-
-        import time
 
         t1_s = time.time()
 
