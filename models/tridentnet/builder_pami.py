@@ -89,7 +89,7 @@ def trident_resnet_v1b_unit(input, name, id, filter, stride, dilate, proj, **kwa
     share_conv = p.branch_conv_shared
     norm = p.normalizer
 
-    use_affine_conv = "rotate" in kwargs
+    use_affine_conv = "rotate" in kwargs and kwargs["rotate"] is not None
     if use_affine_conv:
         rotate = kwargs["rotate"]
         arg_params = p.arg_params
@@ -168,7 +168,11 @@ def get_trident_resnet_backbone(unit, helper):
 
         # construct parallel branches
         cs = []
-        for dil, rot, id in zip(p.branch_dilates, p.branch_rotates, p.branch_ids):
+        if p.branch_rotates is None:
+            rotates = [None] * len(p.branch_dilates)
+        else:
+            rotates = p.branch_rotates
+        for dil, rot, id in zip(p.branch_dilates, rotates, p.branch_ids):
             c = data  # reset c to the output of last stage
             for i in range(num_block - num_tri + 1, num_block + 1):
                 c = trident_resnet_v1b_unit(
