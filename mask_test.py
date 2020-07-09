@@ -49,6 +49,7 @@ if __name__ == "__main__":
     pTest = patch_config_as_nothrow(pTest)
 
     from utils.logger import config_logger
+    save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     config_logger(os.path.join(save_path, "log_mask_test_%s.txt" % time_str))
 
