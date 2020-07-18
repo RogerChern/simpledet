@@ -155,8 +155,9 @@ def train_net(config):
         sym = attach_quantize_node(sym, out_shape_dictoinary, pQuant.WeightQuantizeParam,
                                    pQuant.ActQuantizeParam, pQuant.quantized_op)
     # merge batch normalization to save memory in fix bn training
-    from utils.graph_optimize import merge_bn
-    sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
+    if not pModel.disable_merge_bn:
+        from utils.graph_optimize import merge_bn
+        sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
 
 
     if pModel.random:
