@@ -362,13 +362,14 @@ def get_trident_resnet_dilatedc5_backbone(unit, helper):
             else:
                 raise ValueError("Unknown branch stage: %d" % branch_stage)
 
-            self.symbol = c5
+            self.c4 = c4
+            self.c5 = c5
 
         def get_rpn_feature(self):
-            return self.symbol
+            return self.c4
 
         def get_rcnn_feature(self):
-            return self.symbol
+            return self.c5
 
     return TridentResNetDilatedC5
 

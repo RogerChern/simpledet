@@ -7,6 +7,8 @@ from symbol.builder import RoiAlign as RoiExtractor
 from symbol.component import Bbox2fcHead as BboxHead
 from mxnext.complicate import normalizer_factory
 
+import mxnet as mx
+
 
 def get_config(is_train):
     class General:
@@ -33,7 +35,7 @@ def get_config(is_train):
     class KvstoreParam:
         kvstore     = "local"
         batch_image = General.batch_image
-        gpus        = [0, 1, 2, 3, 4, 5, 6, 7]
+        gpus        = [0]
         fp16        = General.fp16
 
     class NormalizeParam:
@@ -162,6 +164,14 @@ def get_config(is_train):
             # for trident non-shared initialization
             for k in sym.list_arguments():
                 if 'stage4' in k:
+                    if 'sc' in k:
+                        if 'gamma' in k:
+                            arg_params[k] = mx.nd.ones(1024)
+                        elif 'beta' in k:
+                            arg_params[k] = mx.nd.zeros(1024)
+                        else:
+                            del arg_params[k]
+                        continue
                     ksub = k.replace('stage4_unit1', 'stage3_unit4')
                     ksub = ksub.replace('stage4_unit2', 'stage3_unit5')
                     ksub = ksub.replace('stage4_unit3', 'stage3_unit6')
@@ -170,6 +180,14 @@ def get_config(is_train):
 
             for k in sym.list_auxiliary_states():
                 if 'stage4' in k:
+                    if 'sc' in k:
+                        if 'moving_var' in k:
+                            aux_params[k] = mx.nd.ones(1024)
+                        elif 'moving_mean' in k:
+                            aux_params[k] = mx.nd.zeros(1024)
+                        else:
+                            raise KeyError('Unknown key: {}'.format(k))
+                        continue
                     ksub = k.replace('stage4_unit1', 'stage3_unit4')
                     ksub = ksub.replace('stage4_unit2', 'stage3_unit5')
                     ksub = ksub.replace('stage4_unit3', 'stage3_unit6')
