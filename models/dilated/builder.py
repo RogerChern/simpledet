@@ -2,7 +2,7 @@ import mxnet as mx
 import mxnext as X
 from mxnext import conv, relu, add
 from mxnext.backbone.resnet_v1b_helper import resnet_unit
-from symbol.builder import Backbone
+from symbol.builder import Backbone, Neck
 
 
 class DilatedResNetV1bC4(Backbone):
@@ -81,3 +81,38 @@ class DilatedResNetV1bFPN(Backbone):
 
     def get_rcnn_feature(self):
         return self.symbol
+
+
+class ASPP(Neck):
+    def __init__(self, pNeck):
+        super().__init__(pNeck)
+
+    def _aspp(self, feat, prefix):
+        p = self.p
+
+        # transform
+        use_relu_for_transform_conv = p.use_relu_for_transform_conv or False
+        trans_conv = X.convrelu if use_relu_for_transform_conv else X.conv
+        GAP = X.global_avg_pool(feat, name="%s_aspp_gap" % prefix)
+        GAP = X.broadcast_like(GAP, feat, name="%s_aspp_gap_broadcast" % prefix)
+        conv_1x1 = trans_conv(feat, "%s_aspp_conv_1x1" % prefix, 256)
+        conv_3x3_dil6 = trans_conv(feat, "%s_aspp_conv_3x3_dil6" % prefix, 256, 3, dilate=6)
+        conv_3x3_dil12 = trans_conv(feat, "%s_aspp_conv_3x3_dil12" % prefix, 256, 3, dilate=12)
+        conv_3x3_dil18 = trans_conv(feat, "%s_aspp_conv_3x3_dil18" % prefix, 256, 3, dilate=18)
+        concated = X.concat([GAP, conv_1x1, conv_3x3_dil6, conv_3x3_dil12, conv_3x3_dil18], name="%s_aspp_concatd" % prefix)
+
+        # output
+        use_relu_for_output_conv = p.use_relu_for_output_conv or False
+        out_conv = X.convrelu if use_relu_for_output_conv else X.conv
+        output = out_conv(concated, "%s_aspp_output" % prefix, 256)
+        
+        return output
+
+    def get_rpn_feature(self, rpn_feat):
+        rpn_feat = self._aspp(rpn_feat, "rpn")
+        return rpn_feat
+
+    def get_rcnn_feature(self, rcnn_feat):
+        rcnn_feat = self._aspp(rcnn_feat, "rcnn")
+        return rcnn_feat
+
