@@ -352,7 +352,7 @@ def get_trident_resnet_dilatedc5_backbone(unit, helper):
                 c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
                 c4 = build_trident_stage(c3, num_c4, num_tri, 1024, 2, "stage3", p)
                 c4 = stack_trident_branches(c4)
-                c5 = helper.resnet_stage(c4, "stage4", num_c5, 1024, 1, 2, p.normalizer)
+                c5 = helper.resnet_c5(c4, num_c5, 1, 2, p.normalizer)
             elif branch_stage == 5:
                 c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
                 c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
