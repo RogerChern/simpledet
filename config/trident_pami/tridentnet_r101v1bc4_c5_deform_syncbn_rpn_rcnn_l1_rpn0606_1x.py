@@ -18,17 +18,17 @@ def get_config(is_train):
         fp16 = True
 
     class Trident:
-        num_branch = 3 if is_train else 1
-        train_scaleaware = False
-        test_scaleaware = False
-        branch_ids = range(num_branch) if is_train else [1]
-        branch_dilates = [1, 2, 3] if is_train else [2]
-        branch_rotates = [0, 0, 0] if is_train else [0]
-        valid_ranges = [(0, -1), (0, -1), (0, -1)] if is_train else [(0, -1)]
+        num_branch = 3
+        train_scaleaware = True
+        test_scaleaware = True
+        branch_ids = range(num_branch)
+        branch_dilates = [1, 2, 3]
+        branch_rotates = [0, 0, 0]
+        valid_ranges = [(0, 90), (30, 160), (90, -1)]
         valid_ranges_on_origin = True
         branch_bn_shared = False
         branch_conv_shared = True
-        branch_deform = False
+        branch_deform = True
 
         assert num_branch == len(branch_ids)
         assert num_branch == len(valid_ranges)
