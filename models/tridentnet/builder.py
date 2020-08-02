@@ -333,7 +333,7 @@ class TridentRpnHead(RpnHead):
         # regression loss
         reg_loss = X.smooth_l1(
             (bbox_delta - bbox_target),
-            scalar=3.0,
+            scalar=(p.regress_target and p.regress_target.smooth_l1_scalar) or 3.0,
             name='rpn_reg_l1'
         )
         reg_loss = bbox_weight * reg_loss
