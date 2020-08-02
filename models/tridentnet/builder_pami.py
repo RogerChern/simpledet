@@ -151,6 +151,73 @@ def trident_resnet_v1b_unit(input, name, id, filter, stride, dilate, proj, **kwa
     return relu(eltwise, name=name + "_relu" + other_postfix)
 
 
+def trident_resnet_v1b_deform_unit(input, name, id, filter, stride, dilate, proj, **kwargs):
+    """
+    Compared with v1, v1b moves stride=2 to the 3x3 conv instead of the 1x1 conv and use std in pre-processing
+    This is also known as the facebook re-implementation of ResNet(a.k.a. the torch ResNet)
+    """
+    p = kwargs["params"]
+    share_bn = p.branch_bn_shared
+    share_conv = p.branch_conv_shared
+    norm = p.normalizer
+
+    use_affine_conv = "rotate" in kwargs and kwargs["rotate"] is not None
+    assert not use_affine_conv, "affine conv is not supported for deformable conv"
+
+    ######################### prepare names #########################
+    if id is not None:
+        conv_postfix = ("_shared%s" if share_conv else "_branch%s") % id
+        bn_postfix = ("_shared%s" if share_bn else "_branch%s") % id
+        other_postfix = "_branch%s" % id
+    else:
+        conv_postfix = ""
+        bn_postfix = ""
+        other_postfix = ""
+
+    ######################### prepare parameters #########################
+    conv_params = lambda x: dict(
+        weight=X.shared_var(name + "_%s_weight" % x) if share_conv else None,
+        name=name + "_%s" % x + conv_postfix
+    )
+
+    def bn_params(x):
+        ret = dict(
+            gamma=X.shared_var(name + "_%s_gamma" % x) if share_bn else None,
+            beta=X.shared_var(name + "_%s_beta" % x) if share_bn else None,
+            moving_mean=X.shared_var(name + "_%s_moving_mean" % x) if share_bn else None,
+            moving_var=X.shared_var(name + "_%s_moving_var" % x) if share_bn else None,
+            name=name + "_%s" % x + bn_postfix
+        )
+        if norm.__name__ == "gn":
+            del ret["moving_mean"], ret["moving_var"]
+        return ret
+
+    ######################### construct graph #########################
+    conv1 = conv(input, filter=filter // 4, **conv_params("conv1"))
+    bn1 = norm(conv1, **bn_params("bn1"))
+    relu1 = relu(bn1, name=name + other_postfix)
+
+    conv2_offset = conv(relu1, name=name + "_conv2_offset" + other_postfix, filter=72, kernel=3, stride=stride, dilate=dilate)
+    conv2 = mx.sym.contrib.DeformableConvolution(relu1, conv2_offset, kernel=(3, 3),
+        stride=(stride, stride), dilate=(dilate, dilate), pad=(dilate, dilate), num_filter=filter // 4,
+        num_deformable_group=4, no_bias=True, **conv_params("conv2"))
+    bn2 = norm(conv2, **bn_params("bn2"))
+    relu2 = relu(bn2, name=name + other_postfix)
+
+    conv3 = conv(relu2, filter=filter, **conv_params("conv3"))
+    bn3 = norm(conv3, **bn_params("bn3"))
+
+    if proj:
+        shortcut = conv(input, filter=filter, stride=stride, **conv_params("sc"))
+        shortcut = norm(shortcut, **bn_params("sc_bn"))
+    else:
+        shortcut = input
+
+    eltwise = add(bn3, shortcut, name=name + "_plus" + other_postfix)
+
+    return relu(eltwise, name=name + "_relu" + other_postfix)
+
+
 def get_trident_resnet_backbone(unit, helper):
     def build_trident_stage(input, num_block, num_tri, filter, stride, prefix, p):
         # construct leading res blocks
@@ -175,16 +242,29 @@ def get_trident_resnet_backbone(unit, helper):
         for dil, rot, id in zip(p.branch_dilates, rotates, p.branch_ids):
             c = data  # reset c to the output of last stage
             for i in range(num_block - num_tri + 1, num_block + 1):
-                c = trident_resnet_v1b_unit(
-                    input=c,
-                    name="%s_unit%s" % (prefix, i),
-                    id=id,
-                    filter=filter,
-                    stride=stride if i == 1 else 1,
-                    proj=True if i == 1 else False,
-                    dilate=dil,
-                    rotate=rot,
-                    params=p)
+                if p.branch_deform and i >= num_block - 2:
+                    # convert last 3 blocks into deformable conv
+                    c = trident_resnet_v1b_deform_unit(
+                        input=c,
+                        name="%s_unit%s" % (prefix, i),
+                        id=id,
+                        filter=filter,
+                        stride=stride if i == 1 else 1,
+                        proj=True if i == 1 else False,
+                        dilate=dil,
+                        rotate=rot,
+                        params=p)
+                else:
+                    c = trident_resnet_v1b_unit(
+                        input=c,
+                        name="%s_unit%s" % (prefix, i),
+                        id=id,
+                        filter=filter,
+                        stride=stride if i == 1 else 1,
+                        proj=True if i == 1 else False,
+                        dilate=dil,
+                        rotate=rot,
+                        params=p)
             cs.append(c)
         # stack branch outputs on the batch dimension
         c = mx.sym.stack(*cs, axis=1)
