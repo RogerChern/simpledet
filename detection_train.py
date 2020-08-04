@@ -146,6 +146,7 @@ def train_net(config):
     when mergebn ahead of attach_quantized_node
     such as `Symbol.ComposeKeyword`
     '''
+    sym.save(model_prefix + ".json")
     if pModel.QuantizeTrainingParam is not None and pModel.QuantizeTrainingParam.quantize_flag:
         pQuant = pModel.QuantizeTrainingParam
         assert pGen.fp16 == False, "current quantize training only support fp32 mode."
@@ -154,10 +155,12 @@ def train_net(config):
         out_shape_dictoinary = dict(zip(sym.get_internals().list_outputs(), out_shape))
         sym = attach_quantize_node(sym, out_shape_dictoinary, pQuant.WeightQuantizeParam,
                                    pQuant.ActQuantizeParam, pQuant.quantized_op)
+        sym.save(model_prefix + "_post_quantization.json")
     # merge batch normalization to save memory in fix bn training
     if not pModel.disable_merge_bn:
         from utils.graph_optimize import merge_bn
         sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
+        sym.save(model_prefix + "_post_merge_bn.json")
 
 
     if pModel.random:
@@ -193,7 +196,6 @@ def train_net(config):
     batch_end_callback = [callback.Speedometer(train_data.batch_size, len(train_data) * (end_epoch - begin_epoch), frequent=pGen.log_frequency)]
     batch_end_callback += pModel.batch_end_callbacks or []
     epoch_end_callback = callback.do_checkpoint(model_prefix)
-    sym.save(model_prefix + ".json")
 
     # decide learning rate
     lr_mode = pOpt.optimizer.lr_mode or 'step'
