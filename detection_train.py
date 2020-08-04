@@ -11,7 +11,7 @@ from functools import reduce
 from core.detection_module import DetModule
 from utils import callback
 from utils.memonger_v2 import search_plan_to_layer
-from utils.lr_scheduler import LRScheduler, WarmupMultiFactorScheduler, LRSequential, AdvancedLRScheduler
+from utils.lr_scheduler import WarmupMultiFactorScheduler, LRSequential, AdvancedLRScheduler
 from utils.load_model import load_checkpoint
 from utils.patch_config import patch_config_as_nothrow
 
@@ -21,7 +21,7 @@ import numpy as np
 
 def train_net(config):
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
-    transform, data_name, label_name, metric_list = config.get_config(is_train=True)
+        transform, data_name, label_name, metric_list = config.get_config(is_train=True)
     pGen = patch_config_as_nothrow(pGen)
     pKv = patch_config_as_nothrow(pKv)
     pRpn = patch_config_as_nothrow(pRpn)
@@ -149,7 +149,7 @@ def train_net(config):
     sym.save(model_prefix + ".json")
     if pModel.QuantizeTrainingParam is not None and pModel.QuantizeTrainingParam.quantize_flag:
         pQuant = pModel.QuantizeTrainingParam
-        assert pGen.fp16 == False, "current quantize training only support fp32 mode."
+        assert pGen.fp16 is False, "current quantize training only support fp32 mode."
         from utils.graph_optimize import attach_quantize_node
         _, out_shape, _ = sym.get_internals().infer_shape(**worker_data_shape)
         out_shape_dictoinary = dict(zip(sym.get_internals().list_outputs(), out_shape))
@@ -222,7 +222,7 @@ def train_net(config):
                 'warmup lr {}, warmup step {}'.format(
                     pOpt.warmup.lr,
                     pOpt.warmup.iter)
-                )
+            )
         if lr_mode == 'step':
             lr_scheduler = WarmupMultiFactorScheduler(
                 step=lr_iter_discount,

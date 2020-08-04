@@ -8,7 +8,7 @@ from pycocotools.coco import COCO
 dataset_split_mapping = {
     "valminusminival2014": "val2014",
     "minival2014": "val2014",
-    "test-dev2017": "test2017"
+    "test-dev2017": "test2017",
 }
 
 
@@ -67,7 +67,7 @@ def generate_groundtruth_database(dataset_name, dataset_split):
         split = dataset_split in dataset_split_mapping and dataset_split_mapping[dataset_split] or dataset_split
 
         image_url = 'data/%s/images/%s/%s' % (dataset_name, split, im_filename)
-        assert os.path.exists(image_url)
+        assert os.path.exists(image_url), '%s does not exist' % image_url
         roi_rec = {
             'image_url': image_url,
             'im_id': img_id,
