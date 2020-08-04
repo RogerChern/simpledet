@@ -20,10 +20,10 @@ class ClsAccWithIgnore(LossWithIgnore):
 
     def update(self, labels, preds):
         pred = preds[1]
-        label = labels[len(stride):len(stride)*2]
+        label = labels[len(self.stride):len(self.stride) * 2]
 
         for stride in self.stride:
-            self.sum_metric += mx.nd.sum(mx.nd.logical_and(pred[stride]>0.5, label[stride]))
+            self.sum_metric += mx.nd.sum(mx.nd.logical_and(pred[stride] > 0.5, label[stride]))
             self.num_inst += mx.nd.sum(label[stride])
 
 class LossMeter(mx.metric.EvalMetric):

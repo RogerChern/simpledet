@@ -353,7 +353,7 @@ class BiFPNNeck(NASFPNNeck):
 
             # P6_1 = sum(P6_0, P7_1)
             P7_1_to_P6 = up2x(P7_1, "P7_1_to_P6")
-	    P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
+            P6_1 = X.merge_sum([P6_0, P7_1_to_P6], name="sum_P6_0_P7_1")
             P6_1 = sepconvbnrelu(P6_1, dim_reduced, init, norm, name="P6_1", prefix=prefix)
             
             # P5_1 = sum(P5_0, P6_1)
