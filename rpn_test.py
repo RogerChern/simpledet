@@ -34,7 +34,7 @@ if __name__ == "__main__":
     config = parse_args()
 
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
-    transform, data_name, label_name, metric_list = config.get_config(is_train=False)
+        transform, data_name, label_name, metric_list = config.get_config(is_train=False)
     pGen = patch_config_as_nothrow(pGen)
     pKv = patch_config_as_nothrow(pKv)
     pRpn = patch_config_as_nothrow(pRpn)
@@ -49,6 +49,13 @@ if __name__ == "__main__":
     save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     config_logger(os.path.join(save_path, "log_rpn_test_%s.txt" % time_str))
+    # hijack all print with logger.info
+    import builtins, logging
+    logger = logging.getLogger()
+    builtin_print = builtins.print
+    def hijack_print_with_logging(msg):
+        logger.info(msg)
+    builtins.print = hijack_print_with_logging
 
     sym = pModel.rpn_test_symbol
     sym.save(pTest.model.prefix + "_rpn_test.json")

@@ -1,5 +1,7 @@
 import argparse
+import datetime
 import importlib
+import os
 import time
 from utils.patch_config import patch_config_as_nothrow
 from core.detection_module import DetModule
@@ -27,6 +29,18 @@ if __name__ == "__main__":
         transform, data_name, label_name, metric_list = config.get_config(is_train=False)
     sym = pModel.test_symbol
 
+    from utils.logger import config_logger
+    save_path = os.path.join("experiments", pGen.name)
+    time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
+    config_logger(os.path.join(save_path, "log_det_infer_speed_%s.txt" % time_str))
+    # hijack all print with logger.info
+    import builtins, logging
+    logger = logging.getLogger()
+    builtin_print = builtins.print
+    def hijack_print_with_logging(msg):
+        logger.info(msg)
+    builtins.print = hijack_print_with_logging
+
     # create dummy data batch
     data = mx.nd.ones(shape=[1, 3] + shape)
     im_info = mx.nd.array([x / 2.0 for x in shape] + [2.0]).reshape(1, 3)
@@ -45,7 +59,7 @@ if __name__ == "__main__":
     pModel = patch_config_as_nothrow(pModel)
     if pModel.QuantizeTrainingParam is not None and pModel.QuantizeTrainingParam.quantize_flag:
         pQuant = pModel.QuantizeTrainingParam
-        assert pGen.fp16 == False, "current quantize training only support fp32 mode."
+        assert pGen.fp16 is False, "current quantize training only support fp32 mode."
         from utils.graph_optimize import attach_quantize_node
         worker_data_shape = dict([(name, tuple(shape)) for name, shape in data_shape])
         # print(worker_data_shape)

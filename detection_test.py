@@ -41,7 +41,7 @@ if __name__ == "__main__":
     config, args = parse_args()
 
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
-    transform, data_name, label_name, metric_list = config.get_config(is_train=False)
+        transform, data_name, label_name, metric_list = config.get_config(is_train=False)
     pGen = patch_config_as_nothrow(pGen)
     pKv = patch_config_as_nothrow(pKv)
     pRpn = patch_config_as_nothrow(pRpn)
@@ -56,6 +56,13 @@ if __name__ == "__main__":
     save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     config_logger(os.path.join(save_path, "log_det_test_%s.txt" % time_str))
+    # hijack all print with logger.info
+    import builtins, logging
+    logger = logging.getLogger()
+    builtin_print = builtins.print
+    def hijack_print_with_logging(msg):
+        logger.info(msg)
+    builtins.print = hijack_print_with_logging
 
     sym = pModel.test_symbol
 
@@ -130,7 +137,7 @@ if __name__ == "__main__":
             '''
             if pModel.QuantizeTrainingParam is not None and pModel.QuantizeTrainingParam.quantize_flag:
                 pQuant = pModel.QuantizeTrainingParam
-                assert pGen.fp16 == False, "current quantize training only support fp32 mode."
+                assert pGen.fp16 is False, "current quantize training only support fp32 mode."
                 from utils.graph_optimize import attach_quantize_node
                 _, out_shape, _ = sym.get_internals().infer_shape(**worker_data_shape)
                 out_shape_dictoinary = dict(zip(sym.get_internals().list_outputs(), out_shape))

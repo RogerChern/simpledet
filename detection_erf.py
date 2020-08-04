@@ -1,13 +1,13 @@
 import argparse
 import importlib
 import os
-import time
+import pickle as pkl
+from itertools import reduce
 
 from utils.load_model import load_checkpoint
 from utils.patch_config import patch_config_as_nothrow
 from core.detection_module import DetModule
 
-import cv2
 import mxnet as mx
 import numpy as np
 
@@ -46,8 +46,10 @@ if __name__ == "__main__":
     sym = pModel.test_symbol
 
     # load dataset
+    image_sets = pDataset.image_set
+    roidbs_all = [pkl.load(open("data/cache/{}.roidb".format(i), "rb"), encoding="latin1") for i in image_sets]
+    roidbs_all = reduce(lambda x, y: x + y, roidbs_all)
     from pycocotools.coco import COCO
-    from pycocotools.cocoeval import COCOeval
     from utils.roidb_to_coco import roidb_to_coco
     if pTest.coco.annotation is not None:
         coco = COCO(pTest.coco.annotation)

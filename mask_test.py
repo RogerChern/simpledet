@@ -37,7 +37,7 @@ if __name__ == "__main__":
     config = parse_args()
 
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
-    transform, data_name, label_name, metric_list = config.get_config(is_train=False)
+        transform, data_name, label_name, metric_list = config.get_config(is_train=False)
     pGen = patch_config_as_nothrow(pGen)
     pKv = patch_config_as_nothrow(pKv)
     pRpn = patch_config_as_nothrow(pRpn)
@@ -52,6 +52,12 @@ if __name__ == "__main__":
     save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     config_logger(os.path.join(save_path, "log_mask_test_%s.txt" % time_str))
+    # hijack all print with logger.info
+    import builtins, logging
+    logger = logging.getLogger()
+    builtin_print = builtins.print
+    def hijack_print_with_logging(msg):
+        logger.info(msg)
 
     sym = pModel.test_symbol
     sym.save(pTest.model.prefix + "_mask_test.json")
@@ -165,8 +171,8 @@ if __name__ == "__main__":
 
             rid, id, info, post_cls_score, post_box, post_cls, mask, mask_score = r
             rid, id, info, post_cls_score, post_box, post_cls, mask, mask_score = rid.squeeze(), id.squeeze(), info.squeeze(), \
-                                                                                post_cls_score.squeeze(), post_box.squeeze(), \
-                                                                                post_cls.squeeze(), mask.squeeze(), mask_score.squeeze()
+                                                                                  post_cls_score.squeeze(), post_box.squeeze(), \
+                                                                                  post_cls.squeeze(), mask.squeeze(), mask_score.squeeze()
 
             # TODO: POTENTIAL BUG, id or rid overflows float32(int23, 16.7M)
             id = np.asscalar(id)
@@ -315,8 +321,6 @@ if __name__ == "__main__":
         t6_s = time.time()
         print("convert to coco format uses: %.1f" % (t6_s - t5_s))
 
-    import json
-
     json.dump(coco_result,
               open("experiments/{}/{}_result.json".format(pGen.name, pDataset.image_set[0]), "w"),
               sort_keys=True, indent=2)
@@ -329,7 +333,7 @@ if __name__ == "__main__":
     coco_eval.accumulate()
     coco_eval.summarize()
 
-    if rescoring_mask == False:
+    if rescoring_mask is False:
         ann_type = 'segm'
         coco_dt = coco.loadRes(coco_result)
         coco_eval = COCOeval(coco, coco_dt)
