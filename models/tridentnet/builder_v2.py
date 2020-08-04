@@ -183,12 +183,12 @@ def trident_resnet_v1b_deform_unit(input, name, id, filter, stride, dilate, proj
     return relu(eltwise, name=name + "_relu" + other_postfix)
 
 
-def get_trident_resnet_c4_backbone(unit, helper):
+def get_trident_resnet_c4_backbone(trident_unit, trident_deform_unit, helper):
     def build_trident_stage(input, num_block, num_tri, filter, stride, prefix, p):
         # construct leading res blocks
         data = input
         for i in range(1, num_block - num_tri + 1):
-            data = unit(
+            data = trident_unit(
                 input=data,
                 name="%s_unit%s" % (prefix, i),
                 id=None,
@@ -205,7 +205,7 @@ def get_trident_resnet_c4_backbone(unit, helper):
             for i in range(num_block - num_tri + 1, num_block + 1):
                 if p.branch_deform and i >= num_block - 2:
                     # convert last 3 blocks into deformable conv
-                    c = trident_resnet_v1b_deform_unit(
+                    c = trident_deform_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
                         id=id,
@@ -215,7 +215,7 @@ def get_trident_resnet_c4_backbone(unit, helper):
                         dilate=dil,
                         params=p)
                 else:
-                    c = trident_resnet_v1b_unit(
+                    c = trident_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
                         id=id,
@@ -271,12 +271,12 @@ def get_trident_resnet_c4_backbone(unit, helper):
     return TridentResNetC4
 
 
-def get_trident_resnet_dilatedc5_backbone(unit, helper):
+def get_trident_resnet_dilatedc5_backbone(trident_unit, trident_deform_unit, helper):
     def build_trident_stage(input, num_block, num_tri, filter, stride, prefix, p):
         # construct leading res blocks
         data = input
         for i in range(1, num_block - num_tri + 1):
-            data = unit(
+            data = trident_unit(
                 input=data,
                 name="%s_unit%s" % (prefix, i),
                 id=None,
@@ -293,7 +293,7 @@ def get_trident_resnet_dilatedc5_backbone(unit, helper):
             for i in range(num_block - num_tri + 1, num_block + 1):
                 if p.branch_deform and i >= num_block - 2:
                     # convert last 3 blocks into deformable conv
-                    c = trident_resnet_v1b_deform_unit(
+                    c = trident_deform_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
                         id=id,
@@ -303,7 +303,7 @@ def get_trident_resnet_dilatedc5_backbone(unit, helper):
                         dilate=dil,
                         params=p)
                 else:
-                    c = trident_resnet_v1b_unit(
+                    c = trident_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
                         id=id,
@@ -374,6 +374,6 @@ def get_trident_resnet_dilatedc5_backbone(unit, helper):
     return TridentResNetDilatedC5
 
 
-TridentResNetV1C4 = get_trident_resnet_c4_backbone(trident_resnet_v1_unit, resnet_v1_helper)
-TridentResNetV1bC4 = get_trident_resnet_c4_backbone(trident_resnet_v1b_unit, resnet_v1b_helper)
-TridentResNetV1bDilatedC5 = get_trident_resnet_dilatedc5_backbone(trident_resnet_v1b_unit, resnet_v1b_helper)
+TridentResNetV1C4 = get_trident_resnet_c4_backbone(trident_resnet_v1_unit, None, resnet_v1_helper)
+TridentResNetV1bC4 = get_trident_resnet_c4_backbone(trident_resnet_v1b_unit, trident_resnet_v1b_deform_unit, resnet_v1b_helper)
+TridentResNetV1bDilatedC5 = get_trident_resnet_dilatedc5_backbone(trident_resnet_v1b_unit, trident_resnet_v1b_deform_unit, resnet_v1b_helper)
