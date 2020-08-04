@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 
 import random
+import logging
 
 import cv2
 import numpy as np
@@ -11,6 +12,9 @@ from queue import Queue
 from threading import Thread
 from operator_py.cython.bbox import bbox_overlaps_cython
 from operator_py.bbox_transform import nonlinear_transform as bbox_transform
+
+
+logger = logging.getLogger(__name__)
 
 
 class DetectionAugmentation(object):
@@ -147,7 +151,7 @@ class Rotate2DImageBbox(DetectionAugmentation):
         self.p = pRotate
         from albumentations import Rotate, BboxParams, Compose
         self.transform = Compose(
-            [Rotate(limit=self.p.limit, p=self.p.prob or 1)], 
+            [Rotate(limit=self.p.limit, p=self.p.prob)],
             bbox_params=BboxParams(format='pascal_voc', label_fields=['gt_cls']))
 
     def apply(self, input_record):
@@ -157,10 +161,16 @@ class Rotate2DImageBbox(DetectionAugmentation):
 
         # filter bbox for albumentation
         gt_bbox_valid = (gt_bbox[:, 2] > gt_bbox[:, 0]) & (gt_bbox[:, 3] > gt_bbox[:, 1])
+        if not np.any(gt_bbox_valid):
+            logger.info("skipped due to no valid box", flush=True)
+            return
         gt_bbox = gt_bbox[gt_bbox_valid]
         gt_cls = gt_cls[gt_bbox_valid]
-        input_record["gt_class"] = gt_cls
         augmented = self.transform(image=image, bboxes=gt_bbox, gt_cls=gt_cls)
+        if len(augmented["bboxes"]) == 0:
+            logger.info("skipped due to no box after rotation augmentation", flush=True)
+            return
+        input_record["gt_class"] = gt_cls
         input_record["image"] = augmented["image"]
         input_record["gt_bbox"] = np.asarray(augmented["bboxes"], dtype=np.float32)
 
@@ -805,8 +815,8 @@ class Loader(mx.io.DataIter):
             return self.result
 
         if self.iter_next():
-            # print("[worker] %d" % self.data_queue.qsize())
-            # print("[collector] %d" % self.result_queue.qsize())
+            # logger.info("[worker] %d" % self.data_queue.qsize())
+            # logger.info("[collector] %d" % self.result_queue.qsize())
             result = self.load_batch()
             self.data = result.data
             self.label = result.label
