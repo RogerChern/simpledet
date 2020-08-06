@@ -162,13 +162,13 @@ class Rotate2DImageBbox(DetectionAugmentation):
         # filter bbox for albumentation
         gt_bbox_valid = (gt_bbox[:, 2] > gt_bbox[:, 0]) & (gt_bbox[:, 3] > gt_bbox[:, 1])
         if not np.any(gt_bbox_valid):
-            logger.info("skipped due to no valid box", flush=True)
+            logger.info("skipped due to no valid box")
             return
         gt_bbox = gt_bbox[gt_bbox_valid]
         gt_cls = gt_cls[gt_bbox_valid]
         augmented = self.transform(image=image, bboxes=gt_bbox, gt_cls=gt_cls)
         if len(augmented["bboxes"]) == 0:
-            logger.info("skipped due to no box after rotation augmentation", flush=True)
+            logger.info("skipped due to no box after rotation augmentation")
             return
         input_record["gt_class"] = gt_cls
         input_record["image"] = augmented["image"]

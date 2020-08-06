@@ -406,7 +406,7 @@ class BboxHead(object):
         p = self.p
         batch_roi = p.image_roi * p.batch_image
         batch_image = p.batch_image
-        smooth_l1_scalar = p.regress_target.smooth_l1_scalar or 1.0
+        smooth_l1_scalar = (p.regress_target and p.regress_target.smooth_l1_scalar) or 1.0
 
         cls_logit, bbox_delta = self.get_output(conv_feat)
 
