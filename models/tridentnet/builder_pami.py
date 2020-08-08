@@ -516,7 +516,7 @@ class OFAHead:
         target_channel_list = self.p.target_channels
 
         student_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_s_%s_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
-        teacher_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_t_%s_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        teacher_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_t_%s_fp32' % i) for i, endpoint in enumerate(self.p.teacher_endpoints, start=1)]
 
         ofa_loss_list = []
         for i in range(len(grad_scale_list)):
