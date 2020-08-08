@@ -4,6 +4,8 @@ import mxnext as X
 from mxnext import conv, relu, add
 from mxnext.backbone import resnet_v1b_helper, resnet_v1d_helper
 from symbol.builder import Backbone
+from models.tridentnet.builder import TridentFasterRcnn
+from models.tridentnet.resnet_v2 import TridentResNetV2Builder
 
 
 def affine_conv(data, name, filter, kernel=1, stride=1, pad=None, dilate=1, rotate=None,
@@ -484,3 +486,87 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
 
 TridentResNetV1bC4 = get_trident_resnet_backbone(trident_resnet_v1b_unit, trident_resnet_v1b_deform_unit, resnet_v1b_helper)
 TridentResNetV1dC4 = get_trident_resnet_backbone(trident_resnet_v1d_unit, trident_resnet_v1d_deform_unit, resnet_v1d_helper)
+
+
+class OFAHead:
+    def __init__(self, pOFA):
+        super().__init__()
+        self.p = pOFA
+        self._student_feat = None
+
+    def _transform_student_feat(self, student_feat, use_relu_in_transform, target_channel, prefix):
+        if self._student_feat:
+            return self._student_feat
+
+        student_hint = X.conv(student_feat, "%s_student_hint_conv" % prefix, target_channel)
+        if use_relu_in_transform:
+            student_hint = X.relu(student_hint, "%s_student_hint_relu" % prefix)
+        return student_hint
+
+    def get_loss(self, rcnn_feat):
+        """
+        Args:
+            rcnn_feat: symbol for rcnn feature maps
+        Returns:
+            ofa_loss: symbol for once-for-all loss
+        """
+        to_fp32 = X.to_fp32 if self.p.fp16 else lambda x: x
+        use_relu_in_transform = self.p.use_relu_in_transform or False
+        grad_scale_list = self.p.grad_scales
+        target_channel_list = self.p.target_channels
+
+        student_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_s_%s_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        teacher_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_t_%s_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+
+        ofa_loss_list = []
+        for i in range(len(grad_scale_list)):
+            grad_scale = grad_scale_list[i]
+            student_feat = student_feat_list[i]
+            teacher_feat = teacher_feat_list[i]
+            target_channel = target_channel_list[i]
+
+            student_feat = self._transform_student_feat(student_feat, use_relu_in_transform, target_channel, "ofa_%d" % (i + 1))
+            ofa_loss = mx.sym.mean(mx.sym.square(student_feat - teacher_feat))
+            ofa_loss = mx.sym.MakeLoss(ofa_loss, grad_scale=grad_scale, name="ofa_loss_%d" % (i + 1))
+            ofa_loss_list.append(ofa_loss)
+        return tuple(ofa_loss_list)
+
+
+class OFAFasterRcnn(TridentFasterRcnn):
+    def __init__(self):
+        super().__init__()
+
+    @classmethod
+    def get_train_symbol(cls, backbone, neck, rpn_head, roi_extractor, bbox_head, ofa_head, num_branch, scaleaware):
+        gt_bbox = X.var("gt_bbox")
+        im_info = X.var("im_info")
+        if scaleaware:
+            valid_ranges = X.var("valid_ranges")
+        rpn_cls_label = X.var("rpn_cls_label")
+        rpn_reg_target = X.var("rpn_reg_target")
+        rpn_reg_weight = X.var("rpn_reg_weight")
+
+        im_info = TridentResNetV2Builder.stack_branch_symbols([im_info] * num_branch)
+        gt_bbox = TridentResNetV2Builder.stack_branch_symbols([gt_bbox] * num_branch)
+        if scaleaware:
+            valid_ranges = X.reshape(valid_ranges, (-3, -2))
+        rpn_cls_label = X.reshape(rpn_cls_label, (-3, -2))
+        rpn_reg_target = X.reshape(rpn_reg_target, (-3, -2))
+        rpn_reg_weight = X.reshape(rpn_reg_weight, (-3, -2))
+
+        rpn_feat = backbone.get_rpn_feature()
+        rcnn_feat = backbone.get_rcnn_feature()
+        rpn_feat = neck.get_rpn_feature(rpn_feat)
+        rcnn_feat = neck.get_rcnn_feature(rcnn_feat)
+
+        rpn_loss = rpn_head.get_loss(rpn_feat, rpn_cls_label, rpn_reg_target, rpn_reg_weight)
+        if scaleaware:
+            proposal, bbox_cls, bbox_target, bbox_weight = rpn_head.get_sampled_proposal_with_filter(rpn_feat, gt_bbox, im_info, valid_ranges)
+        else:
+            proposal, bbox_cls, bbox_target, bbox_weight = rpn_head.get_sampled_proposal(rpn_feat, gt_bbox, im_info)
+        roi_feat = roi_extractor.get_roi_feature(rcnn_feat, proposal)
+        bbox_loss = bbox_head.get_loss(roi_feat, bbox_cls, bbox_target, bbox_weight)
+        ofa_loss = ofa_head.get_loss(rcnn_feat)
+
+        return X.group(rpn_loss + bbox_loss + ofa_loss)
+
