@@ -1,5 +1,4 @@
-from models.tridentnet.builder_pami import OFAFasterRcnn as Detector
-from models.tridentnet.builder_pami import OFAHead
+from models.tridentnet.builder import TridentFasterRcnn as Detector
 from models.tridentnet.builder_pami import TridentResNetV1dC4 as Backbone
 from models.tridentnet.builder import TridentRpnHead as RpnHead
 from models.tridentnet.builder import process_branch_outputs, process_branch_rpn_outputs
@@ -13,7 +12,7 @@ def get_config(is_train):
     class General:
         log_frequency = 10
         name = __name__.rsplit("/")[-1].rsplit(".")[-1]
-        batch_image = 1 if is_train else 1
+        batch_image = 4 if is_train else 1
         fp16 = True
 
     class Trident:
@@ -53,14 +52,6 @@ def get_config(is_train):
         branch_conv_shared = Trident.branch_conv_shared
         branch_deform = Trident.branch_deform
         arg_params = {}
-
-    class OFAParam:
-        fp16 = General.fp16
-        use_relu_in_transform = True
-        target_channels = [1024]
-        grad_scales = [5]
-        student_endpoints = ["stage3_unit6_relu_branch1_output"]
-        teacher_endpoints = ["stage3_unit6_relu_branch2_output"]
 
     class NeckParam:
         fp16 = General.fp16
@@ -137,14 +128,13 @@ def get_config(is_train):
 
     backbone = Backbone(BackboneParam)
     neck = Neck(NeckParam)
-    ofa_head = OFAHead(OFAParam)
     rpn_head = RpnHead(RpnParam)
     roi_extractor = RoiExtractor(RoiParam)
     bbox_head = BboxHead(BboxParam)
     detector = Detector()
     if is_train:
         train_sym = detector.get_train_symbol(
-            backbone, neck, rpn_head, roi_extractor, bbox_head, ofa_head,
+            backbone, neck, rpn_head, roi_extractor, bbox_head,
             num_branch=Trident.num_branch, scaleaware=Trident.train_scaleaware)
         rpn_test_sym = None
         test_sym = None
@@ -320,18 +310,8 @@ def get_config(is_train):
         ["bbox_reg_loss_output", "bbox_label_blockgrad_output"],
         []
     )
-    # ofa losses
-    ofa_metrics = []
-    for i in range(len(OFAParam.student_endpoints)):
-        ofa_metrics.append(
-            metric.ScalarLoss(
-                "OFA%d" % (i + 1),
-                ["ofa_loss_%d_output" % (i + 1)],
-                []
-            )
-        )
 
-    metric_list = [rpn_acc_metric, rpn_l1_metric, box_acc_metric, box_l1_metric] + ofa_metrics
+    metric_list = [rpn_acc_metric, rpn_l1_metric, box_acc_metric, box_l1_metric]
 
     return General, KvstoreParam, RpnParam, RoiParam, BboxParam, DatasetParam, \
            ModelParam, OptimizeParam, TestParam, \

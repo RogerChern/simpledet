@@ -13,7 +13,7 @@ def get_config(is_train):
     class General:
         log_frequency = 10
         name = __name__.rsplit("/")[-1].rsplit(".")[-1]
-        batch_image = 1 if is_train else 1
+        batch_image = 2 if is_train else 1
         fp16 = True
 
     class Trident:
@@ -35,7 +35,7 @@ def get_config(is_train):
     class KvstoreParam:
         kvstore     = "local"
         batch_image = General.batch_image
-        gpus        = [0, 1, 2, 3, 4, 5, 6, 7]
+        gpus        = [4, 5, 6, 7]
         fp16        = General.fp16
 
     class NormalizeParam:
@@ -57,10 +57,10 @@ def get_config(is_train):
     class OFAParam:
         fp16 = General.fp16
         use_relu_in_transform = True
-        target_channels = [1024]
-        grad_scales = [5]
-        student_endpoints = ["stage3_unit6_relu_branch1_output"]
-        teacher_endpoints = ["stage3_unit6_relu_branch2_output"]
+        target_channels = [1024, 1024]
+        grad_scales = [5, 5]
+        student_endpoints = ["stage3_unit6_relu_branch1_output", "stage3_unit6_relu_branch1_output"]
+        teacher_endpoints = ["stage3_unit6_relu_branch2_output", "stage3_unit6_relu_branch0_output"]
 
     class NeckParam:
         fp16 = General.fp16
