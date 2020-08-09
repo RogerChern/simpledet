@@ -495,11 +495,13 @@ class OFAHead:
         self._student_feat = None
 
     def _transform_student_feat(self, student_feat, direct_match, use_relu_in_transform, target_channel, prefix):
-        if not direct_match:
+        if direct_match:
+            return student_feat
+        else:
             student_hint = X.conv(student_feat, "%s_student_hint_conv" % prefix, target_channel)
             if use_relu_in_transform:
                 student_hint = X.relu(student_hint, "%s_student_hint_relu" % prefix)
-        return student_hint
+            return student_hint
 
     def get_loss(self, rcnn_feat):
         """
