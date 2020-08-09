@@ -494,13 +494,11 @@ class OFAHead:
         self.p = pOFA
         self._student_feat = None
 
-    def _transform_student_feat(self, student_feat, use_relu_in_transform, target_channel, prefix):
-        if self._student_feat:
-            return self._student_feat
-
-        student_hint = X.conv(student_feat, "%s_student_hint_conv" % prefix, target_channel)
-        if use_relu_in_transform:
-            student_hint = X.relu(student_hint, "%s_student_hint_relu" % prefix)
+    def _transform_student_feat(self, student_feat, direct_match, use_relu_in_transform, target_channel, prefix):
+        if not direct_match:
+            student_hint = X.conv(student_feat, "%s_student_hint_conv" % prefix, target_channel)
+            if use_relu_in_transform:
+                student_hint = X.relu(student_hint, "%s_student_hint_relu" % prefix)
         return student_hint
 
     def get_loss(self, rcnn_feat):
@@ -511,6 +509,7 @@ class OFAHead:
             ofa_loss: symbol for once-for-all loss
         """
         to_fp32 = X.to_fp32 if self.p.fp16 else lambda x: x
+        direct_match = self.p.direct_match or False
         use_relu_in_transform = self.p.use_relu_in_transform or False
         grad_scale_list = self.p.grad_scales
         target_channel_list = self.p.target_channels
@@ -525,7 +524,7 @@ class OFAHead:
             teacher_feat = teacher_feat_list[i]
             target_channel = target_channel_list[i]
 
-            student_feat = self._transform_student_feat(student_feat, use_relu_in_transform, target_channel, "ofa_%d" % (i + 1))
+            student_feat = self._transform_student_feat(student_feat, direct_match, use_relu_in_transform, target_channel, "ofa_%d" % (i + 1))
             ofa_loss = mx.sym.mean(mx.sym.square(student_feat - teacher_feat))
             ofa_loss = mx.sym.MakeLoss(ofa_loss, grad_scale=grad_scale, name="ofa_loss_%d" % (i + 1))
             ofa_loss_list.append(ofa_loss)
