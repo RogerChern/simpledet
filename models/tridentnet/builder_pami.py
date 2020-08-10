@@ -690,7 +690,7 @@ def get_trident_resnext_backbone(trident_unit, trident_deform_unit, helper):
             num_c2, num_c3, num_c4, _ = helper.depth_config[p.depth]
             branch_stage = p.branch_stage or 4
             num_tri = eval("p.num_c%d_block" % branch_stage) or (eval("num_c%d" % branch_stage) - 1)
-            num_deform_c2, num_deform_c3, num_deform_c4, num_deform_c5 = p.num_deform_blocks or (0, 0, 0, 3)
+            num_deform_c2, num_deform_c3, num_deform_c4, num_deform_c5 = p.num_deform_blocks or (0, 0, 3, 0)
             g = p.group
             cpg = p.channel_per_group
 
