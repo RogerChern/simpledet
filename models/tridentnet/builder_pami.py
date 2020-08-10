@@ -397,7 +397,7 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
             c = data  # reset c to the output of last stage
             for i in range(num_block - num_tri + 1, num_block + 1):
                 if p.branch_deform and i >= num_block - num_deform + 1:
-                    # convert last 3 blocks into deformable conv
+                    # convert last num_deform blocks into deformable conv
                     c = trident_deform_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
@@ -432,7 +432,7 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
             p = self.p
 
             num_c2, num_c3, num_c4, _ = helper.depth_config[p.depth]
-            num_deform_c2, num_deform_c3, num_deform_c4, _ = p.num_deform_blocks or (0, 0, 0, 3)
+            num_deform_c2, num_deform_c3, num_deform_c4, _ = p.num_deform_blocks or (0, 0, 3, 0)
             branch_stage = p.branch_stage or 4
             num_tri = eval("p.num_c%d_block" % branch_stage) or (eval("num_c%d" % branch_stage) - 1)
 
