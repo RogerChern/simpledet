@@ -2,8 +2,8 @@ from collections.abc import Iterable
 import mxnet as mx
 import mxnext as X
 from mxnext import conv, relu, add
-from mxnext.backbone import resnet_v1b_helper, resnet_v1d_helper
-from symbol.builder import Backbone
+from mxnext.backbone import resnet_v1b_helper, resnet_v1d_helper, resnext_helper
+from symbol.builder import Backbone, BboxHead
 from models.tridentnet.builder import TridentFasterRcnn
 from models.tridentnet.resnet_v2 import TridentResNetV2Builder
 from utils.patch_config import patch_config_as_nothrow
@@ -488,6 +488,291 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
 
 TridentResNetV1bC4 = get_trident_resnet_backbone(trident_resnet_v1b_unit, trident_resnet_v1b_deform_unit, resnet_v1b_helper)
 TridentResNetV1dC4 = get_trident_resnet_backbone(trident_resnet_v1d_unit, trident_resnet_v1d_deform_unit, resnet_v1d_helper)
+
+
+def trident_resnext_unit(input, name, id, filter, stride, dilate, proj, group, channel_per_group, **kwargs):
+    p = kwargs["params"]
+    share_bn = p.branch_bn_shared
+    share_conv = p.branch_conv_shared
+    norm = p.normalizer
+
+    use_affine_conv = "rotate" in kwargs and kwargs["rotate"] is not None
+    if use_affine_conv:
+        rotate = kwargs["rotate"]
+        arg_params = p.arg_params
+        assert p is not None
+
+    ######################### prepare names #########################
+    if id is not None:
+        conv_postfix = ("_shared%s" if share_conv else "_branch%s") % id
+        bn_postfix = ("_shared%s" if share_bn else "_branch%s") % id
+        other_postfix = "_branch%s" % id
+    else:
+        conv_postfix = ""
+        bn_postfix = ""
+        other_postfix = ""
+
+    ######################### prepare parameters #########################
+    def conv_params(x):
+        return dict(
+            weight=X.shared_var(name + "_%s_weight" % x) if share_conv else None,
+            name=name + "_%s" % x + conv_postfix
+        )
+
+    def bn_params(x):
+        ret = dict(
+            gamma=X.shared_var(name + "_%s_gamma" % x) if share_bn else None,
+            beta=X.shared_var(name + "_%s_beta" % x) if share_bn else None,
+            moving_mean=X.shared_var(name + "_%s_moving_mean" % x) if share_bn else None,
+            moving_var=X.shared_var(name + "_%s_moving_var" % x) if share_bn else None,
+            name=name + "_%s" % x + bn_postfix
+        )
+        if norm.__name__ == "gn":
+            del ret["moving_mean"], ret["moving_var"]
+        return ret
+
+    ######################### construct graph #########################
+    conv1 = conv(input, filter=group * channel_per_group * filter // 256, **conv_params("conv1"))
+    bn1 = norm(conv1, **bn_params("bn1"))
+    relu1 = relu(bn1, name=name + other_postfix)
+
+    if use_affine_conv:
+        conv2 = affine_conv(relu1, filter=group * channel_per_group * filter // 256, kernel=3, stride=stride, dilate=dilate, rotate=rotate,
+            arg_params=arg_params, **conv_params("conv2"))
+    else:
+        conv2 = conv(relu1, filter=group * channel_per_group * filter // 256, kernel=3, stride=stride, dilate=dilate, num_group=group, **conv_params("conv2"))
+    bn2 = norm(conv2, **bn_params("bn2"))
+    relu2 = relu(bn2, name=name + other_postfix)
+
+    conv3 = conv(relu2, filter=filter, **conv_params("conv3"))
+    bn3 = norm(conv3, **bn_params("bn3"))
+
+    if proj:
+        shortcut = conv(input, filter=filter, stride=stride, **conv_params("sc"))
+        shortcut = norm(shortcut, **bn_params("sc_bn"))
+    else:
+        shortcut = input
+
+    eltwise = add(bn3, shortcut, name=name + "_plus" + other_postfix)
+
+    return relu(eltwise, name=name + "_relu" + other_postfix)
+
+
+def trident_resnext_deform_unit(input, name, id, filter, stride, dilate, proj, group, channel_per_group, **kwargs):
+    p = kwargs["params"]
+    share_bn = p.branch_bn_shared
+    share_conv = p.branch_conv_shared
+    norm = p.normalizer
+
+    use_affine_conv = "rotate" in kwargs and kwargs["rotate"] is not None
+    assert not use_affine_conv, "affine conv is not supported for deformable conv"
+
+    ######################### prepare names #########################
+    if id is not None:
+        conv_postfix = ("_shared%s" if share_conv else "_branch%s") % id
+        bn_postfix = ("_shared%s" if share_bn else "_branch%s") % id
+        other_postfix = "_branch%s" % id
+    else:
+        conv_postfix = ""
+        bn_postfix = ""
+        other_postfix = ""
+
+    ######################### prepare parameters #########################
+    conv_params = lambda x: dict(
+        weight=X.shared_var(name + "_%s_weight" % x) if share_conv else None,
+        name=name + "_%s" % x + conv_postfix
+    )
+
+    def bn_params(x):
+        ret = dict(
+            gamma=X.shared_var(name + "_%s_gamma" % x) if share_bn else None,
+            beta=X.shared_var(name + "_%s_beta" % x) if share_bn else None,
+            moving_mean=X.shared_var(name + "_%s_moving_mean" % x) if share_bn else None,
+            moving_var=X.shared_var(name + "_%s_moving_var" % x) if share_bn else None,
+            name=name + "_%s" % x + bn_postfix
+        )
+        if norm.__name__ == "gn":
+            del ret["moving_mean"], ret["moving_var"]
+        return ret
+
+    ######################### construct graph #########################
+    conv1 = conv(input, filter=group * channel_per_group * filter // 256, **conv_params("conv1"))
+    bn1 = norm(conv1, **bn_params("bn1"))
+    relu1 = relu(bn1, name=name + other_postfix)
+
+    conv2_offset = conv(relu1, name=name + "_conv2_offset" + other_postfix, filter=72, kernel=3, stride=stride, dilate=dilate)
+    conv2 = mx.sym.contrib.DeformableConvolution(relu1, conv2_offset, kernel=(3, 3),
+        stride=(stride, stride), dilate=(dilate, dilate), pad=(dilate, dilate),
+        num_filter=group * channel_per_group * filter // 256, num_group=group,
+        num_deformable_group=4, no_bias=True, **conv_params("conv2"))
+    bn2 = norm(conv2, **bn_params("bn2"))
+    relu2 = relu(bn2, name=name + other_postfix)
+
+    conv3 = conv(relu2, filter=filter, **conv_params("conv3"))
+    bn3 = norm(conv3, **bn_params("bn3"))
+
+    if proj:
+        shortcut = conv(input, filter=filter, stride=stride, **conv_params("sc"))
+        shortcut = norm(shortcut, **bn_params("sc_bn"))
+    else:
+        shortcut = input
+
+    eltwise = add(bn3, shortcut, name=name + "_plus" + other_postfix)
+
+    return relu(eltwise, name=name + "_relu" + other_postfix)
+
+
+def get_trident_resnext_backbone(trident_unit, trident_deform_unit, helper):
+    def build_trident_stage(input, num_block, num_tri, num_deform, filter, stride, group, channel_per_group, prefix, p):
+        # construct leading res blocks
+        data = input
+        for i in range(1, num_block - num_tri + 1):
+            data = trident_unit(
+                input=data,
+                name="%s_unit%s" % (prefix, i),
+                id=None,
+                filter=filter,
+                stride=stride if i == 1 else 1,
+                proj=True if i == 1 else False,
+                group=group,
+                channel_per_group=channel_per_group,
+                dilate=1,
+                params=p)
+
+        # construct parallel branches
+        cs = []
+        if p.branch_rotates is None:
+            rotates = [None] * len(p.branch_dilates)
+        else:
+            rotates = p.branch_rotates
+        for dil, rot, id in zip(p.branch_dilates, rotates, p.branch_ids):
+            c = data  # reset c to the output of last stage
+            for i in range(num_block - num_tri + 1, num_block + 1):
+                if p.branch_deform and i >= num_block - num_deform + 1:
+                    # convert last num_deform blocks into deformable conv
+                    c = trident_deform_unit(
+                        input=c,
+                        name="%s_unit%s" % (prefix, i),
+                        id=id,
+                        filter=filter,
+                        stride=stride if i == 1 else 1,
+                        proj=True if i == 1 else False,
+                        dilate=dil,
+                        rotate=rot,
+                        group=group,
+                        channel_per_group=channel_per_group,
+                        params=p)
+                else:
+                    c = trident_unit(
+                        input=c,
+                        name="%s_unit%s" % (prefix, i),
+                        id=id,
+                        filter=filter,
+                        stride=stride if i == 1 else 1,
+                        proj=True if i == 1 else False,
+                        dilate=dil,
+                        rotate=rot,
+                        group=group,
+                        channel_per_group=channel_per_group,
+                        params=p)
+            cs.append(c)
+        # stack branch outputs on the batch dimension
+        c = mx.sym.stack(*cs, axis=1)
+        c = mx.sym.reshape(c, shape=(-3, -2))
+        return c
+
+
+    class TridentResNeXtC4(Backbone):
+        def __init__(self, pBackbone):
+            super().__init__(pBackbone)
+            p = self.p
+
+            num_c2, num_c3, num_c4, _ = helper.depth_config[p.depth]
+            branch_stage = p.branch_stage or 4
+            num_tri = eval("p.num_c%d_block" % branch_stage) or (eval("num_c%d" % branch_stage) - 1)
+            num_deform_c2, num_deform_c3, num_deform_c4, num_deform_c5 = p.num_deform_blocks or (0, 0, 0, 3)
+            g = p.group
+            cpg = p.channel_per_group
+
+            ################### construct symbolic graph ###################
+            data = X.var("data")
+            if p.fp16:
+                data = data.astype("float16")
+            c1 = helper.resnext_c1(data, p.normalizer)
+
+            if branch_stage == 2:
+                if p.fp16 and p.branch_rotates is not None:
+                    c1 = X.to_fp32(c1, "stem_last_tofp32")
+                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, 1, g, cpg, "stage1", p)
+                    c2 = X.to_fp16(c2, "stage1_last_tofp16")
+                else:
+                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, 1, g, cpg, "stage1", p)
+                c3 = helper.resnext_c3(c2, num_c3, 2, 1, g, cpg, p.normalizer)
+                c4 = helper.resnext_c4(c3, num_c4, 2, 1, g, cpg, p.normalizer)
+
+            elif branch_stage == 3:
+                c2 = helper.resnext_c2(c1, num_c2, 1, 1, g, cpg, p.normalizer)
+                if p.fp16 and p.branch_rotates is not None:
+                    c2 = X.to_fp32(c2, "stage1_last_tofp32")
+                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, 2, g, cpg, "stage2", p)
+                    c3 = X.to_fp16(c3, "stage2_last_tofp16")
+                else:
+                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, 2, g, cpg, "stage2", p)
+                c4 = helper.resnext_c4(c3, num_c4, 2, 1, g, cpg, p.normalizer)
+
+            elif branch_stage == 4:
+                c2 = helper.resnext_c2(c1, num_c2, 1, 1, g, cpg, p.normalizer)
+                c3 = helper.resnext_c3(c2, num_c3, 2, 1, g, cpg, p.normalizer)
+                if p.fp16 and p.branch_rotates is not None:
+                    c3 = X.to_fp32(c3, "stage2_last_tofp32")
+                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, 2, g, cpg, "stage3", p)
+                    c4 = X.to_fp16(c4, "stage3_last_tofp16")
+                else:
+                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, 2, g, cpg, "stage3", p)
+
+            else:
+                raise ValueError("Unknown branch stage: %d" % branch_stage)
+
+            self.symbol = c4
+
+        def get_rpn_feature(self):
+            return self.symbol
+
+        def get_rcnn_feature(self):
+            return self.symbol
+
+    return TridentResNeXtC4
+
+
+TridentResNeXtC4 = get_trident_resnext_backbone(trident_resnext_unit, trident_resnext_deform_unit, resnext_helper)
+
+
+class BboxResNeXtC5Head(BboxHead):
+    def __init__(self, pBbox):
+        super().__init__(pBbox)
+
+    def _get_bbox_head_logit(self, conv_feat):
+        if self._head_feat is not None:
+            return self._head_feat
+
+        unit = resnext_helper.resnext_stage(
+            conv_feat,
+            name="stage4",
+            num_block=3,
+            filter=2048,
+            stride=1,
+            dilate=1,
+            group=self.p.group,
+            channel_per_group=self.p.channel_per_group,
+            norm=self.p.normalizer
+        )
+        if self.p.fp16:
+            unit = X.to_fp32(unit, name='c5_to_fp32')
+        pool1 = X.pool(unit, global_pool=True, name='pool1')
+
+        self._head_feat = pool1
+
+        return self._head_feat
 
 
 class OFAHead:
