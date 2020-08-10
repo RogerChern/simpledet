@@ -23,7 +23,7 @@ def get_config(is_train):
         branch_dilates = [1, 2, 3] if is_train else [2]
         valid_ranges = [(0, -1), (0, -1), (0, -1)] if is_train else [(0, -1)]
         valid_ranges_on_origin = True
-        branch_bn_shared = True
+        branch_bn_shared = False
         branch_conv_shared = True
         branch_deform = True
 
