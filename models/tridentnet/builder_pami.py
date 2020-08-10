@@ -6,6 +6,7 @@ from mxnext.backbone import resnet_v1b_helper, resnet_v1d_helper
 from symbol.builder import Backbone
 from models.tridentnet.builder import TridentFasterRcnn
 from models.tridentnet.resnet_v2 import TridentResNetV2Builder
+from utils.patch_config import patch_config_as_nothrow
 
 
 def affine_conv(data, name, filter, kernel=1, stride=1, pad=None, dilate=1, rotate=None,
@@ -491,7 +492,7 @@ TridentResNetV1dC4 = get_trident_resnet_backbone(trident_resnet_v1d_unit, triden
 class OFAHead:
     def __init__(self, pOFA):
         super().__init__()
-        self.p = pOFA
+        self.p = patch_config_as_nothrow(pOFA)
         self._student_feat = None
 
     def _transform_student_feat(self, student_feat, direct_match, use_relu_in_transform, target_channel, prefix):
@@ -512,12 +513,13 @@ class OFAHead:
         """
         to_fp32 = X.to_fp32 if self.p.fp16 else lambda x: x
         direct_match = self.p.direct_match or False
+        no_grad_for_teacher = self.p.no_grad_for_teacher or False
         use_relu_in_transform = self.p.use_relu_in_transform or False
         grad_scale_list = self.p.grad_scales
         target_channel_list = self.p.target_channels
 
-        student_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_s_%s_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
-        teacher_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_t_%s_fp32' % i) for i, endpoint in enumerate(self.p.teacher_endpoints, start=1)]
+        student_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_s_%d_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        teacher_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_t_%d_fp32' % i) for i, endpoint in enumerate(self.p.teacher_endpoints, start=1)]
 
         ofa_loss_list = []
         for i in range(len(grad_scale_list)):
@@ -527,6 +529,8 @@ class OFAHead:
             target_channel = target_channel_list[i]
 
             student_feat = self._transform_student_feat(student_feat, direct_match, use_relu_in_transform, target_channel, "ofa_%d" % (i + 1))
+            if no_grad_for_teacher:
+                teacher_feat = X.block_grad(teacher_feat, "ofa_t_%d_blockgrad" % (i + 1))
             ofa_loss = mx.sym.mean(mx.sym.square(student_feat - teacher_feat))
             ofa_loss = mx.sym.MakeLoss(ofa_loss, grad_scale=grad_scale, name="ofa_loss_%d" % (i + 1))
             ofa_loss_list.append(ofa_loss)
