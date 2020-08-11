@@ -119,3 +119,77 @@ def py_weighted_nms(dets, thresh_lo, thresh_hi):
         keep.append([x1_avg, y1_avg, x2_avg, y2_avg, scores[i]])
         order = order[inds]
     return np.array(keep)
+
+
+
+def soft_bbox_vote(det, vote_thresh, score_thresh):
+    if det.shape[0] <= 1:
+        return np.zeros((0, 5))
+    order = det[:, 4].ravel().argsort()[::-1]
+    det = det[order, :]
+    dets = []
+    while det.shape[0] > 0:
+        # IOU
+        area = (det[:, 2] - det[:, 0] + 1) * (det[:, 3] - det[:, 1] + 1)
+        xx1 = np.maximum(det[0, 0], det[:, 0])
+        yy1 = np.maximum(det[0, 1], det[:, 1])
+        xx2 = np.minimum(det[0, 2], det[:, 2])
+        yy2 = np.minimum(det[0, 3], det[:, 3])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        o = inter / (area[0] + area[:] - inter)
+
+        # get needed merge det and delete these det
+        merge_index = np.where(o >= vote_thresh)[0]
+        det_accu = det[merge_index, :]
+        det_accu_iou = o[merge_index]
+        det = np.delete(det, merge_index, 0)
+
+        if merge_index.shape[0] <= 1:
+            try:
+                dets = np.row_stack((dets, det_accu))
+            except:
+                dets = det_accu
+            continue
+        else:
+            soft_det_accu = det_accu.copy()
+            soft_det_accu[:, 4] = soft_det_accu[:, 4] * (1 - det_accu_iou)
+            soft_index = np.where(soft_det_accu[:, 4] >= score_thresh)
+            soft_det_accu = soft_det_accu[soft_index, :]
+
+            det_accu[:, 0:4] = det_accu[:, 0:4] * np.tile(det_accu[:, -1:], (1, 4))
+            max_score = np.max(det_accu[:, 4])
+            det_accu_sum = np.zeros((1, 5))
+            det_accu_sum[:, 0:4] = np.sum(det_accu[:, 0:4], axis=0) / np.sum(det_accu[:, -1:])
+            det_accu_sum[:, 4] = max_score
+
+            if soft_det_accu.shape[0] > 0:
+                det_accu_sum = np.row_stack((det_accu_sum, soft_det_accu))
+
+            try:
+                dets = np.row_stack((dets, det_accu_sum))
+            except:
+                dets = det_accu_sum
+
+    order = dets[:, 4].ravel().argsort()[::-1]
+    dets = dets[order, :]
+
+    return dets
+
+
+def soft_bbox_vote_wrapper(vote_thresh, score_thresh):
+    """
+    Perform bbox voting with softnms
+    Adapted from https://github.com/sfzhang15/ATSS/blob/79dfb28bd18c931dd75a3ca2c63d32f5e4b1626a/atss_core/engine/bbox_aug_vote.py#L251-L310
+
+    Args:
+        vote_thresh: float, the lowest IoU threshold for the nmsed bboxes to be merged
+        score_thresh: float, the lowest score threhold for the nmsed bboxes to be merged
+    Returns:
+        nms: np.ndarray[n, 5] -> np.ndarray[n, 5], a nms function accepts and return bboxes
+    """
+    def _nms(dets):
+        return soft_bbox_vote(dets, vote_thresh, score_thresh)
+    return _nms
+
