@@ -398,6 +398,8 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
             for i in range(num_block - num_tri + 1, num_block + 1):
                 if p.branch_deform and i >= num_block - num_deform + 1:
                     # convert last num_deform blocks into deformable conv
+                    if i == num_block - num_deform + 1:
+                        c = X.to_fp32(c, 'pre_deform_tofp32')
                     c = trident_deform_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
@@ -650,6 +652,8 @@ def get_trident_resnext_backbone(trident_unit, trident_deform_unit, helper):
             for i in range(num_block - num_tri + 1, num_block + 1):
                 if p.branch_deform and i >= num_block - num_deform + 1:
                     # convert last num_deform blocks into deformable conv
+                    if i == num_block - num_deform + 1:
+                        c = X.to_fp32(c, 'pre_deform_tofp32')
                     c = trident_deform_unit(
                         input=c,
                         name="%s_unit%s" % (prefix, i),
