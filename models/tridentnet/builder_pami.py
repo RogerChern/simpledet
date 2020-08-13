@@ -3,7 +3,7 @@ import mxnet as mx
 import mxnext as X
 from mxnext import conv, relu, add
 from mxnext.backbone import resnet_v1b_helper, resnet_v1d_helper, resnext_helper
-from symbol.builder import Backbone, BboxHead
+from symbol.builder import Backbone, BboxHead, Neck
 from models.tridentnet.builder import TridentFasterRcnn
 from models.tridentnet.resnet_v2 import TridentResNetV2Builder
 from utils.patch_config import patch_config_as_nothrow
@@ -780,10 +780,9 @@ class BboxResNeXtC5Head(BboxHead):
 
 
 class OFAHead:
-    def __init__(self, pOFA):
+    def __init__(self, pHead):
         super().__init__()
-        self.p = patch_config_as_nothrow(pOFA)
-        self._student_feat = None
+        self.p = patch_config_as_nothrow(pHead)
 
     def _transform_student_feat(self, student_feat, direct_match, use_relu_in_transform, target_channel, prefix):
         if direct_match:
@@ -827,6 +826,38 @@ class OFAHead:
         return tuple(ofa_loss_list)
 
 
+class OFANeck(Neck):
+    def __init__(self, pNeck):
+        super().__init__(pNeck)
+        self.symbol = None
+
+    def get_rpn_feature(self, rpn_feat):
+        if self.symbol is not None:
+            return self.symbol
+        to_fp32 = X.to_fp32 if self.p.fp16 else lambda x: x
+        try:
+            student_feat_list = [rpn_feat.get_internals()['ofa_s_%d_fp32_output' % i] for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        except ValueError:
+            student_feat_list = [to_fp32(rpn_feat.get_internals()[endpoint], 'ofa_s_%d_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        c = mx.sym.stack(*student_feat_list, axis=1)
+        c = mx.sym.reshape(c, shape=(-3, -2))
+        self.symbol = X.concat([to_fp32(rpn_feat, 'ofa_t_fp32'), c], "ofa_t_s", axis=0)
+        return self.symbol
+
+    def get_rcnn_feature(self, rcnn_feat):
+        if self.symbol is not None:
+            return self.symbol
+        to_fp32 = X.to_fp32 if self.p.fp16 else lambda x: x
+        try:
+            student_feat_list = [rcnn_feat.get_internals()['ofa_s_%d_fp32_output' % i] for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        except ValueError:
+            student_feat_list = [to_fp32(rcnn_feat.get_internals()[endpoint], 'ofa_s_%d_fp32' % i) for i, endpoint in enumerate(self.p.student_endpoints, start=1)]
+        c = mx.sym.stack(*student_feat_list, axis=1)
+        c = mx.sym.reshape(c, shape=(-3, -2))
+        self.symbol = X.concat([to_fp32(rcnn_feat, 'ofa_t_fp32'), c], "ofa_t_s", axis=0)
+        return self.symbol
+
+
 class OFAFasterRcnn(TridentFasterRcnn):
     def __init__(self):
         super().__init__()
@@ -848,6 +879,14 @@ class OFAFasterRcnn(TridentFasterRcnn):
         rpn_cls_label = X.reshape(rpn_cls_label, (-3, -2))
         rpn_reg_target = X.reshape(rpn_reg_target, (-3, -2))
         rpn_reg_weight = X.reshape(rpn_reg_weight, (-3, -2))
+        if type(neck) == OFANeck:
+            rpn_cls_label = X.concat([rpn_cls_label, rpn_cls_label], "rpn_cls_label_2x", axis=0)
+            rpn_reg_target = X.concat([rpn_reg_target, rpn_reg_target], "rpn_reg_target_2x", axis=0)
+            rpn_reg_weight = X.concat([rpn_reg_weight, rpn_reg_weight], "rpn_reg_weight_2x", axis=0)
+            im_info = X.concat([im_info, im_info], "im_info_2x", axis=0)
+            gt_bbox = X.concat([gt_bbox, gt_bbox], "gt_bbox_2x", axis=0)
+            if scaleaware:
+                valid_ranges = X.concat([valid_ranges, valid_ranges], "valid_ranges_2x", axis=0)
 
         rpn_feat = backbone.get_rpn_feature()
         rcnn_feat = backbone.get_rcnn_feature()
