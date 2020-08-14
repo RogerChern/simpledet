@@ -123,6 +123,8 @@ def py_weighted_nms(dets, thresh_lo, thresh_hi):
 
 
 def soft_bbox_vote(det, vote_thresh, score_thresh):
+    assert type(det) == np.ndarray and det.ndim == 2, det
+
     if det.shape[0] <= 1:
         return np.zeros((0, 5))
     order = det[:, 4].ravel().argsort()[::-1]
@@ -155,7 +157,7 @@ def soft_bbox_vote(det, vote_thresh, score_thresh):
         else:
             soft_det_accu = det_accu.copy()
             soft_det_accu[:, 4] = soft_det_accu[:, 4] * (1 - det_accu_iou)
-            soft_index = np.where(soft_det_accu[:, 4] >= score_thresh)
+            soft_index = np.where(soft_det_accu[:, 4] >= score_thresh)[0]
             soft_det_accu = soft_det_accu[soft_index, :]
 
             det_accu[:, 0:4] = det_accu[:, 0:4] * np.tile(det_accu[:, -1:], (1, 4))
