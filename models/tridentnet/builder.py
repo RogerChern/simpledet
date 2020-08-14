@@ -94,7 +94,7 @@ class TridentFasterRcnn(object):
     @classmethod
     def get_test_symbol(cls, backbone, neck, rpn_head, roi_extractor, bbox_head, num_branch):
         rec_id, im_id, im_info, proposal, proposal_score = \
-            TridentFasterRcnn.get_rpn_test_symbol(backbone, neck, rpn_head, num_branch)
+            cls.get_rpn_test_symbol(backbone, neck, rpn_head, num_branch)
 
         im_info_branches = TridentResNetV2Builder.stack_branch_symbols([im_info] * num_branch)
 
