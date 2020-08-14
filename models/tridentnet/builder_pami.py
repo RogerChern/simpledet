@@ -1,4 +1,6 @@
 from collections.abc import Iterable
+from typing import List, Dict, Tuple
+import numpy as np
 import mxnet as mx
 import mxnext as X
 from mxnext import conv, relu, add
@@ -903,4 +905,24 @@ class OFAFasterRcnn(TridentFasterRcnn):
         ofa_loss = ofa_head.get_loss(rcnn_feat)
 
         return X.group(rpn_loss + bbox_loss + ofa_loss)
+
+
+def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+    """
+    Bbox selection for multi-scale bbox aggregation
+    Args:
+        detections: detection results with bbox_xyxy, cls_score and im_info fields
+        roi_records: records with per image meta information
+    Returns:
+        filtered_records: detection records satisfing the range constraints
+    """
+    filtered_records = []
+    for detection, record in zip(detections, roi_records):
+        box = detection['bbox_xyxy']
+        low, high = record['bbox_valid_range_on_original_input']
+        box_size = (box[:, 2] - box[:, 0] + 1.0) * (box[:, 3] - box[:, 1] + 1.0)
+        if low < box_size ** 0.5 < high:
+            filtered_records.append(record)
+
+    return filtered_records
 
