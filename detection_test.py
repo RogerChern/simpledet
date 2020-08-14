@@ -65,6 +65,7 @@ if __name__ == "__main__":
     builtins.print = hijack_print_with_logging
 
     sym = pModel.test_symbol
+    sym.save(pTest.model.prefix + "_test.json")
 
     image_sets = pDataset.image_set
     roidbs_all = [pkl.load(open("data/cache/{}.roidb".format(i), "rb"), encoding="latin1") for i in image_sets]
@@ -147,7 +148,7 @@ if __name__ == "__main__":
             # merge batch normalization to speedup test
             from utils.graph_optimize import merge_bn
             sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
-            sym.save(pTest.model.prefix + "_test.json")
+            sym.save(pTest.model.prefix + "_test_post_merge_bn.json")
 
             for i in pKv.gpus:
                 ctx = mx.gpu(i)
@@ -240,7 +241,11 @@ if __name__ == "__main__":
 
 
         if callable(pTest.nms.type):
-            nms = pTest.nms.type(pTest.nms.thr)
+            if pTest.nms.thr is not None:
+                # legacy custom nms
+                nms = pTest.nms.type(pTest.nms.thr)
+            else:
+                nms = pTest.nms.type
         else:
             from operator_py.nms import py_nms_wrapper
             nms = py_nms_wrapper(pTest.nms.thr)
