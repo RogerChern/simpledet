@@ -18,6 +18,7 @@ def get_config(is_train):
     class KvstoreParam:
         kvstore     = "local"
         batch_image = General.batch_image
+        # gpus        = [0]
         gpus        = [0, 1, 2, 3, 4, 5, 6, 7]
         fp16        = General.fp16
 
@@ -160,27 +161,19 @@ def get_config(is_train):
 
 
     class TestScaleParam:
-        short_sides = (400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1800)
         long_side = 3000
+        short_sides  = (400,      500,      600,      700,      800,     900,     1000,    1100,     1200,     1300,     1400,     1800)
         scale_ranges = ((96, -1), (96, -1), (64, -1), (64, -1), (0, -1), (0, -1), (0, -1), (0, 256), (0, 256), (0, 192), (0, 192), (0, 96))
+        # short_sides  = (600,      800,     1000,    1200)
+        # scale_ranges = ((96, -1), (0, -1), (0, -1), (0, 256))
 
 
     class TestParam:
         min_det_score = 0.05
         max_det_per_image = 100
 
-        def process_roidb(roidb):
-            ms_roidb = []
-            for r_ in roidb:
-                for short, range in zip(TestScaleParam.short_sides, TestScaleParam.scale_ranges):
-                    r = r_.copy()
-                    r["bbox_valid_range_on_original_input"] = range
-                    r["resize_long"] = TestScaleParam.long_side
-                    r["resize_short"] = short
-                    ms_roidb.append(r)
-            return ms_roidb
-
-        from models.tridentnet.builder_pami import filter_bbox_by_scale_range
+        from models.tridentnet.builder_pami import filter_bbox_by_scale_range, add_scale_and_range_to_roidb
+        process_roidb = add_scale_and_range_to_roidb(TestScaleParam.short_sides, TestScaleParam.long_side, TestScaleParam.scale_ranges)
         process_output = filter_bbox_by_scale_range
 
         class model:
@@ -188,10 +181,12 @@ def get_config(is_train):
             epoch = OptimizeParam.schedule.end_epoch
 
         class nms:
-            from operator_py.nms import soft_bbox_vote_wrapper
-            type = soft_bbox_vote_wrapper(0.66, 0.05)
+            from operator_py.nms import soft_nms_bbox_vote_wrapper
+            type = soft_nms_bbox_vote_wrapper(0.5, 0.9)
             # from operator_py.nms import cython_soft_nms_wrapper
             # type = cython_soft_nms_wrapper(0.5)
+            # type = "nms"
+            # thr = 0.5
 
         class coco:
             annotation = "data/coco/annotations/instances_val2017.json"
