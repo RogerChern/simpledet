@@ -935,3 +935,16 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
 
     return filtered_records
 
+
+def add_scale_and_range_to_roidb(short_sides, long_side, scale_ranges):
+    def process_roidb(roidb):
+        ms_roidb = []
+        for r_ in roidb:
+            for short_side, scale_range in zip(short_sides, scale_ranges):
+                r = r_.copy()
+                r["bbox_valid_range_on_original_input"] = scale_range
+                r["resize_long"] = long_side
+                r["resize_short"] = short_side
+                ms_roidb.append(r)
+        return ms_roidb
+    return process_roidb
