@@ -917,12 +917,21 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
         filtered_records: detection records satisfing the range constraints
     """
     filtered_records = []
-    for detection, record in zip(detections, roi_records):
+    for detection in detections:
+        # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+        rec_id = int(detection['rec_id'])
+        record = roi_records[rec_id]
+        assert record['rec_id'] == detection['rec_id']
+
+        filtered_detection = detection.copy()
         box = detection['bbox_xyxy']
         low, high = record['bbox_valid_range_on_original_input']
+        high = 10000 if high == -1 else high
         box_size = (box[:, 2] - box[:, 0] + 1.0) * (box[:, 3] - box[:, 1] + 1.0)
-        if low < box_size ** 0.5 < high:
-            filtered_records.append(record)
+        in_range_inds = (box_size < high ** 2) & (box_size > low ** 2)
+        filtered_detection['bbox_xyxy'] = detection['bbox_xyxy'][in_range_inds]
+        filtered_detection['cls_score'] = detection['cls_score'][in_range_inds]
+        filtered_records.append(filtered_detection)
 
     return filtered_records
 
