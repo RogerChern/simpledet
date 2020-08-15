@@ -1,5 +1,6 @@
 import numpy as np
 from .cython.cpu_nms import greedy_nms, soft_nms
+from operator_py.detectron_bbox_utils import box_voting
 
 
 def cython_soft_nms_wrapper(thresh, sigma=0.5, score_thresh=0.001, method='linear'):
@@ -31,6 +32,21 @@ def cpu_nms_wrapper(thresh):
 def wnms_wrapper(thresh_lo, thresh_hi):
     def _nms(dets):
         return py_weighted_nms(dets, thresh_lo, thresh_hi)
+    return _nms
+
+
+def nms_bbox_vote_wrapper(nms_thresh, vote_thresh):
+    def _nms(dets):
+        nmsed_dets = nms(dets, nms_thresh)
+        return box_voting(nmsed_dets, dets, vote_thresh)
+    return _nms
+
+
+def soft_nms_bbox_vote_wrapper(nms_thresh, vote_thresh):
+    def _nms(dets):
+        nms_method = cython_soft_nms_wrapper(nms_thresh)
+        nmsed_dets = nms_method(dets)
+        return box_voting(nmsed_dets, dets, vote_thresh)
     return _nms
 
 
