@@ -321,6 +321,21 @@ class Flip2DImageBbox(DetectionAugmentation):
             input_record["gt_bbox"] = flipped_bbox
 
 
+class Flip2DImage(DetectionAugmentation):
+    """
+    input: image, ndarray(h, w, rgb)
+    output: image, ndarray(h, w, rgb)
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def apply(self, input_record):
+        if input_record["flipped"]:
+            image = input_record["image"]
+            input_record["image"] = image[:, ::-1]
+
+
 class RandCrop2DImageBbox(DetectionAugmentation):
     def __init__(self, pCrop):
         super().__init__()
