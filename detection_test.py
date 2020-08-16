@@ -117,6 +117,8 @@ if __name__ == "__main__":
 
             # infer shape
             worker_data_shape = dict(loader.provide_data + loader.provide_label)
+            if pGen.multi_symbol_test:
+                del worker_data_shape['model_tag']  # model tag is not consumed by symbol
             for key in worker_data_shape:
                 worker_data_shape[key] = (pKv.batch_image,) + worker_data_shape[key][1:]
             arg_shape, _, aux_shape = sym.infer_shape(**worker_data_shape)
@@ -146,28 +148,46 @@ if __name__ == "__main__":
                                         pQuant.ActQuantizeParam, pQuant.quantized_op)
 
             # merge batch normalization to speedup test
-            from utils.graph_optimize import merge_bn
-            sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
-            sym.save(pTest.model.prefix + "_test_post_merge_bn.json")
+            if not pModel.disable_merge_bn:
+                from utils.graph_optimize import merge_bn
+                sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
+                sym.save(pTest.model.prefix + "_test_post_merge_bn.json")
 
             for i in pKv.gpus:
-                ctx = mx.gpu(i)
-                mod = DetModule(sym, data_names=data_names, context=ctx)
-                mod.bind(data_shapes=loader.provide_data, for_training=False)
-                mod.set_params(arg_params, aux_params, allow_extra=False)
-                execs.append(mod)
+                if pGen.multi_symbol_test:
+                    ctx = mx.gpu(i)
+                    tag2mods = {}
+                    for i, (tag, sym) in enumerate(pModel.tag_to_symbol.items()):
+                        mod = DetModule(sym, data_names=data_names, context=ctx)
+                        mod.bind(data_shapes=loader.provide_data, for_training=False)
+                        mod.set_params(arg_params, aux_params, allow_extra=False)
+                        tag2mods[tag] = mod
+                    execs.append(tag2mods)
+                else:
+                    ctx = mx.gpu(i)
+                    mod = DetModule(sym, data_names=data_names, context=ctx)
+                    mod.bind(data_shapes=loader.provide_data, for_training=False)
+                    mod.set_params(arg_params, aux_params, allow_extra=False)
+                    execs.append(mod)
 
         all_outputs = []
 
         if index_split == 0:
-            def eval_worker(exe, data_queue, result_queue):
+            def eval_worker(exe, data_queue, result_queue, multi_symbol_test=False):
                 while True:
                     batch = data_queue.get()
-                    exe.forward(batch, is_train=False)
-                    out = [x.asnumpy() for x in exe.get_outputs()]
+                    if multi_symbol_test:
+                        tag = int(batch.label[label_name.index('model_tag')].asnumpy().item())
+                        this_exe = exe[tag]
+                        del batch.provide_label[label_name.index('model_tag')]
+                        del batch.label[label_name.index('model_tag')]
+                    else:
+                        this_exe = exe
+                    this_exe.forward(batch, is_train=False)
+                    out = [x.asnumpy() for x in this_exe.get_outputs()]
                     result_queue.put(out)
             for exe in execs:
-                workers.append(Thread(target=eval_worker, args=(exe, data_queue, result_queue)))
+                workers.append(Thread(target=eval_worker, args=(exe, data_queue, result_queue, pGen.multi_symbol_test or False)))
             for w in workers:
                 w.daemon = True
                 w.start()
