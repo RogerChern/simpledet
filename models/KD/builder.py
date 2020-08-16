@@ -14,7 +14,7 @@ class FitNetHead(object):
         super().__init__()
         self.p = pKD
         self._student_feat = None
-    
+
     def get_student_feat(self, mimic_feat, mimic_channel):
         if self._student_feat:
             return self._student_feat
@@ -26,22 +26,22 @@ class FitNetHead(object):
                                           stride=(1, 1),
                                           pad=(0, 0),
                                           name="student_hint_conv")
-        student_hint = mx.sym.Activation(data=student_hint, 
-                                         act_type='relu', 
+        student_hint = mx.sym.Activation(data=student_hint,
+                                         act_type='relu',
                                          name="student_hint_relu")
         return student_hint
-            
+
     def get_loss(self, feat_dict, label):
         mimic_stage = self.p.stage
         mimic_channel = self.p.channel
         mimic_grad_scale = self.p.grad_scale
-        
+
         student_feat = self.get_student_feat(feat_dict[mimic_stage], mimic_channel)
         fit_loss = mx.sym.mean(mx.sym.square(student_feat - label))
         fit_loss = mx.sym.MakeLoss(fit_loss, grad_scale=mimic_grad_scale, name="fit_loss")
         return fit_loss
-        
-        
+
+
 class FitNetRetinaNet(RetinaNet):
     def __init__(self):
         super().__init__()
