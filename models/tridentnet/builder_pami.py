@@ -941,16 +941,85 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
     return filtered_detections
 
 
+def flip_bbox_for_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+    """
+    Flip back predicted bboxes for flipped images
+    Args:
+        detections: detection results with bbox_xyxy, cls_score and im_info fields
+        roi_records: records with per image meta information
+    Returns:
+        filtered_records: detection records satisfing the range constraints
+    """
+    recid2roirec = {}
+    for rec in roi_records:
+        rec_id = int(rec['rec_id'])
+        recid2roirec[rec_id] = rec
 
-def add_scale_and_range_to_roidb(short_sides, long_side, scale_ranges):
+    flipped_records = []
+    for detection in detections:
+        # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+        rec_id = int(detection['rec_id'])
+        record = recid2roirec[rec_id]
+        assert record['rec_id'] == detection['rec_id']
+
+        box = detection['bbox_xyxy']
+        flipped = record['flipped']
+        if flipped:
+            # scale w back to original image size
+            w = detection['im_info'][1] / detection['im_info'][2]
+            flipped_box = box.copy()
+            flipped_box[:, 0] = (w - 1) - box[:, 2]
+            flipped_box[:, 2] = (w - 1) - box[:, 0]
+            # clip box to border
+            flipped_box[:, 0] = np.clip(flipped_box[:, 0], 0, w - 1)
+            flipped_box[:, 2] = np.clip(flipped_box[:, 2], 0, w - 1)
+            detection['bbox_xyxy'] = flipped_box
+        flipped_records.append(detection)
+
+    return flipped_records
+
+
+def compose_process_output(*function_list):
+    def process_output(detections, roidb):
+        for fun in function_list:
+            detections = fun(detections, roidb)
+        return detections
+    return process_output
+
+
+def add_scale_and_range_to_roidb(short_sides, long_side, scale_ranges, model_tags=None):
+    if model_tags is None:
+        model_tags = [None] * len(scale_ranges)
     def process_roidb(roidb):
         ms_roidb = []
         for r_ in roidb:
-            for short_side, scale_range in zip(short_sides, scale_ranges):
+            for short_side, scale_range, tag in zip(short_sides, scale_ranges, model_tags):
                 r = r_.copy()
                 r["bbox_valid_range_on_original_input"] = scale_range
                 r["resize_long"] = long_side
                 r["resize_short"] = short_side
+                if tag is not None:
+                    r["model_tag"] = tag
                 ms_roidb.append(r)
         return ms_roidb
     return process_roidb
+
+
+def add_flip_to_roidb(roidb):
+    processed_roidb = []
+    for r_ in roidb:
+        r = r_.copy()
+        r_["flipped"] = False
+        r["flipped"] = True
+        processed_roidb.append(r_)
+        processed_roidb.append(r)
+    return processed_roidb
+
+
+def compose_process_roidb(*function_list):
+    def process_roidb(roidb):
+        for fun in function_list:
+            roidb = fun(roidb)
+        return roidb
+    return process_roidb
+
