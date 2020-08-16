@@ -914,13 +914,18 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
         detections: detection results with bbox_xyxy, cls_score and im_info fields
         roi_records: records with per image meta information
     Returns:
-        filtered_records: detection records satisfing the range constraints
+        filtered_detections: detection records satisfing the range constraints
     """
-    filtered_records = []
+    recid2roirec = {}
+    for rec in roi_records:
+        rec_id = int(rec['rec_id'])
+        recid2roirec[rec_id] = rec
+
+    filtered_detections = []
     for detection in detections:
         # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
         rec_id = int(detection['rec_id'])
-        record = roi_records[rec_id]
+        record = recid2roirec[rec_id]
         assert record['rec_id'] == detection['rec_id']
 
         filtered_detection = detection.copy()
@@ -931,9 +936,10 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
         in_range_inds = (box_size < high ** 2) & (box_size > low ** 2)
         filtered_detection['bbox_xyxy'] = detection['bbox_xyxy'][in_range_inds]
         filtered_detection['cls_score'] = detection['cls_score'][in_range_inds]
-        filtered_records.append(filtered_detection)
+        filtered_detections.append(filtered_detection)
 
-    return filtered_records
+    return filtered_detections
+
 
 
 def add_scale_and_range_to_roidb(short_sides, long_side, scale_ranges):
