@@ -8,6 +8,7 @@ from core.detection_module import DetModule
 from core.detection_input import Loader
 from utils.load_model import load_checkpoint
 from utils.patch_config import patch_config_as_nothrow
+from utils.coco_utils import official_summary, ap_at_ten_iou_thr_summary
 
 from functools import reduce
 from queue import Queue
@@ -339,17 +340,20 @@ if __name__ == "__main__":
     if not args.no_eval:
         if args.classwise:
             for i, k in coco.cats.items():
-                print("\nEvaluating **%s**" % k["name"])
+                print("Evaluate category: *%s*" % k["name"])
                 coco_eval.params.catIds = i
                 coco_eval.evaluate()
                 coco_eval.accumulate()
-                coco_eval.summarize()
+                official_summary(coco_eval)
+                ap_at_ten_iou_thr_summary(coco_eval)
 
-        print("\nEvaluating **all**")
+        print("Evaluate category: *all*")
         coco_eval.params.catIds = sorted(coco.getCatIds())
         coco_eval.evaluate()
         coco_eval.accumulate()
-        coco_eval.summarize()
+        official_summary(coco_eval)
+        ap_at_ten_iou_thr_summary(coco_eval)
 
         t6_s = time.time()
         print("coco eval uses: %.1f" % (t6_s - t5_s))
+
