@@ -233,7 +233,7 @@ def get_config(is_train):
             thr = 0.5
 
         class coco:
-            annotation = "data/coco/annotations/instances_minival2014.json"
+            annotation = "data/coco/annotations/instances_val2017.json"
 
         if Trident.test_scaleaware:
             process_output = lambda x, y: process_branch_outputs(

@@ -197,7 +197,7 @@ def get_config(is_train):
             thr = 0.6
 
         class coco:
-            annotation = "data/coco/annotations/instances_minival2014.json"
+            annotation = "data/coco/annotations/instances_val2017.json"
 
 
     from core.detection_input import ReadRoiRecord, Resize2DImageBbox, \

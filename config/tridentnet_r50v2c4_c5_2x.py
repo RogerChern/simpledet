@@ -198,7 +198,7 @@ def get_config(is_train):
             thr = 0.5
 
         class coco:
-            annotation = "data/coco/annotations/instances_minival2014.json"
+            annotation = "data/coco/annotations/instances_val2017.json"
 
     # data processing
     class ResizeParam:
