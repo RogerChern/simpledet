@@ -50,6 +50,7 @@ def official_summary(coco_eval):
     stats[9] = summarize(coco_eval, 0, areaRng='small', maxDets=coco_eval.params.maxDets[2])
     stats[10] = summarize(coco_eval, 0, areaRng='medium', maxDets=coco_eval.params.maxDets[2])
     stats[11] = summarize(coco_eval, 0, areaRng='large', maxDets=coco_eval.params.maxDets[2])
+    print("Easy copy AP: %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats[:1]))
     print("Easy copy IoU=0.5, 0.75: %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats[1:3]))
     print("Easy copy s, m, l: %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats[3:6]))
     print("Evaluate done")
@@ -62,6 +63,6 @@ def ap_at_ten_iou_thr_summary(coco_eval):
         ap = summarize(coco_eval, 1, iouThr=coco_eval.params.iouThrs[i], maxDets=coco_eval.params.maxDets[2])
         stats.append(ap)
     print("Easy copy IoU=0.5:0.1:0.9 : %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats[::2]))
-    print("Easy copy IoU=0.5:0.05:0.9 : %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats))
+    print("Easy copy IoU=0.5:0.05:0.95 : %s" % ", ".join(str("%2.1f" % (_ * 100)) for _ in stats))
     print("Evaluate done")
 
