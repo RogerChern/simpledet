@@ -979,6 +979,37 @@ def flip_bbox_for_output(detections: List[Dict], roi_records: List[Dict]) -> Lis
     return flipped_records
 
 
+def offset_patch_for_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+    """
+    Add back offsets for predicted bboxes detected on patches
+    Args:
+        detections: detection results in the patch coords with bbox_xyxy, cls_score and im_info fields
+        roi_records: records with per image meta information
+    Returns:
+        detections: detection records in the global coords
+    """
+    recid2roirec = {}
+    for rec in roi_records:
+        rec_id = int(rec['rec_id'])
+        recid2roirec[rec_id] = rec
+
+    for detection in detections:
+        # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+        rec_id = int(detection['rec_id'])
+        record = recid2roirec[rec_id]
+        assert record['rec_id'] == detection['rec_id']
+
+        box = detection['bbox_xyxy']
+        offset_x, offset_y = record['offset_x'], record['offset_y']
+        assert box.ndim == 2 and box.shape[-1] == 4
+        box[:, 0] += offset_x
+        box[:, 2] += offset_x
+        box[:, 1] += offset_y
+        box[:, 3] += offset_y
+
+    return detections
+
+
 def compose_process_output(*function_list):
     def process_output(detections, roidb):
         for fun in function_list:

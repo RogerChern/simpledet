@@ -30,6 +30,9 @@ def parse_args():
     parser.add_argument('--classwise', action='store_true')
     parser.add_argument('--no-eval', action='store_true')
     parser.add_argument('--ema', action='store_true')
+    parser.add_argument('--skip-coco-metric', action='store_true')
+    parser.add_argument('--skip-ten-ap-metric', action='store_true')
+    parser.add_argument('--max-det', type=int, default=None)
     args = parser.parse_args()
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
@@ -322,7 +325,8 @@ if __name__ == "__main__":
                      'score': float(scores[k])}
                     for k in range(det.shape[0])
                 ]
-            result = sorted(result, key=lambda x: x['score'])[-pTest.max_det_per_image:]
+            max_det = args.max_det or pTest.max_det_per_image
+            result = sorted(result, key=lambda x: x['score'])[-max_det:]
             coco_result += result
 
         t5_s = time.time()
@@ -337,11 +341,17 @@ if __name__ == "__main__":
     coco_eval = COCOeval(coco, coco_dt)
     coco_eval.params.iouType = args.result_type
 
+    if args.skip_coco_metric:
+        official_summary = lambda x: None
+    if args.skip_ten_ap_metric:
+        ap_at_ten_iou_thr_summary = lambda x: None
+
     if not args.no_eval:
         if args.classwise:
             for i, k in coco.cats.items():
                 print("Evaluate category: *%s*" % k["name"])
                 coco_eval.params.catIds = i
+                coco_eval.params.maxDets[-1] = args.max_det
                 coco_eval.evaluate()
                 coco_eval.accumulate()
                 official_summary(coco_eval)
@@ -349,6 +359,7 @@ if __name__ == "__main__":
 
         print("Evaluate category: *all*")
         coco_eval.params.catIds = sorted(coco.getCatIds())
+        coco_eval.params.maxDets[-1] = args.max_det
         coco_eval.evaluate()
         coco_eval.accumulate()
         official_summary(coco_eval)

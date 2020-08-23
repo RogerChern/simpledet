@@ -42,7 +42,7 @@ def roidb_to_coco_ex(roidb):
             })
             obj_id += 1
             category_ids[int(cls)] = cls_name or int(cls)
-    for class_id in category_ids:
+    for class_id in sorted(category_ids):
         dataset['categories'].append({
             'id': class_id,
             'name': category_ids[class_id],
