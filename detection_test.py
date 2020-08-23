@@ -211,8 +211,8 @@ if __name__ == "__main__":
             rid, id, info, cls, box = r
             rid, id, info, cls, box = rid.squeeze(), id.squeeze(), info.squeeze(), cls.squeeze(), box.squeeze()
             # TODO: POTENTIAL BUG, id or rid overflows float32(int23, 16.7M)
-            id = np.asscalar(id)
-            rid = np.asscalar(rid)
+            id = id.item()
+            rid = rid.item()
 
             scale = info[2]  # h_raw, w_raw, scale
             box = box / scale  # scale to original image scale
