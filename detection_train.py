@@ -19,7 +19,7 @@ import mxnet as mx
 import numpy as np
 
 
-def train_net(config, args):
+def train_net(config):
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
         transform, data_name, label_name, metric_list = config.get_config(is_train=True)
     pGen = patch_config_as_nothrow(pGen)
@@ -32,7 +32,7 @@ def train_net(config, args):
     pOpt = patch_config_as_nothrow(pOpt)
     pTest = patch_config_as_nothrow(pTest)
 
-    ctx = [mx.gpu(int(i)) for i in args.gpus or pKv.gpus]
+    ctx = [mx.gpu(int(i)) for i in pKv.gpus]
     pretrain_prefix = pModel.pretrain.prefix
     pretrain_epoch = pModel.pretrain.epoch
     prefix = pGen.name
@@ -311,12 +311,8 @@ def train_net(config, args):
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Detection')
     parser.add_argument('--config', help='config file path', type=str)
-    parser.add_argument('--gpus', type=str, default=None)
 
     args = parser.parse_args()
-
-    if args.gpus:
-        args.gpus = [int(_) for _ in args.gpus.strip().split(',')]
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
     return config, args
