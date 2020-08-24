@@ -23,6 +23,7 @@ import pickle as pkl
 def parse_args():
     parser = argparse.ArgumentParser(description='Test Detection')
     # general
+    parser.add_argument('--gpus', type=str, default=None)
     parser.add_argument('--config', help='config file path', type=str)
     parser.add_argument('--epoch', help='override test epoch specified by config', type=int, default=None)
     parser.add_argument('--result-type', type=str, default='bbox')
@@ -34,6 +35,9 @@ def parse_args():
     parser.add_argument('--skip-ten-ap-metric', action='store_true')
     parser.add_argument('--max-det', type=int, default=None)
     args = parser.parse_args()
+
+    if args.gpus:
+        args.gpus = [int(_) for _ in args.gpus.strip().split(',')]
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
     return config, args
@@ -157,7 +161,7 @@ if __name__ == "__main__":
                 sym, arg_params, aux_params = merge_bn(sym, arg_params, aux_params)
                 sym.save(pTest.model.prefix + "_test_post_merge_bn.json")
 
-            for i in pKv.gpus:
+            for i in args.gpus or pKv.gpus:
                 if pGen.multi_symbol_test:
                     ctx = mx.gpu(i)
                     tag2mods = {}
