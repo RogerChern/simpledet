@@ -19,7 +19,7 @@ import mxnet as mx
 import numpy as np
 
 
-def train_net(config):
+def train_net(config, args):
     pGen, pKv, pRpn, pRoi, pBbox, pDataset, pModel, pOpt, pTest, \
         transform, data_name, label_name, metric_list = config.get_config(is_train=True)
     pGen = patch_config_as_nothrow(pGen)
