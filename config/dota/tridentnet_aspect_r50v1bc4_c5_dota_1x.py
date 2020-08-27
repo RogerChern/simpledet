@@ -16,12 +16,12 @@ def get_config(is_train):
         fp16 = True
 
     class Trident:
-        num_branch = 9 if is_train else 1
+        num_branch = 11 if is_train else 1
         train_scaleaware = False
         test_scaleaware = False
         branch_ids = range(num_branch) if is_train else [1]
         branch_dilates = [1, 2, 3, (1, 3), (3, 1), (1, 5), (5, 1), (1, 7), (7, 1), (1, 9), (9, 1)] if is_train else [2]
-        valid_ranges = [(0, -1)] * 9 if is_train else [(0, -1)]
+        valid_ranges = [(0, -1)] * 11 if is_train else [(0, -1)]
         valid_ranges_on_origin = True
         branch_bn_shared = True
         branch_conv_shared = True
