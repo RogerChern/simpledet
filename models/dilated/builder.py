@@ -16,9 +16,9 @@ class DilatedResNetV1bC4(Backbone):
         if p.fp16:
             data = data.astype("float16")
         c1 = helper.resnet_c1(data, p.normalizer)
-        c2 = helper.resnet_c2(c1, num_c2, 1, p.c2_dil or 1, p.normalizer)
-        c3 = helper.resnet_c3(c2, num_c3, 2, p.c3_dil or 1, p.normalizer)
-        c4 = helper.resnet_c4(c3, num_c4, 2, p.c4_dil or 1, p.normalizer)
+        c2 = helper.resnet_c2(c1, num_c2, p.c2_stride or 1, p.c2_dil or 1, p.normalizer)
+        c3 = helper.resnet_c3(c2, num_c3, p.c3_stride or 2, p.c3_dil or 1, p.normalizer)
+        c4 = helper.resnet_c4(c3, num_c4, p.c4_stride or 2, p.c4_dil or 1, p.normalizer)
 
         self.symbol = c4
 
@@ -129,7 +129,7 @@ class ASPP(Neck):
         use_relu_for_output_conv = p.use_relu_for_output_conv or False
         out_conv = X.convrelu if use_relu_for_output_conv else X.conv
         output = out_conv(concated, "%s_aspp_output" % prefix, 256)
-        
+
         return output
 
     def get_rpn_feature(self, rpn_feat):
