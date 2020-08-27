@@ -437,6 +437,7 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
 
             num_c2, num_c3, num_c4, _ = helper.depth_config[p.depth]
             num_deform_c2, num_deform_c3, num_deform_c4, _ = p.num_deform_blocks or (0, 0, 3, 0)
+            c2_stride, c3_stride, c4_stride = p.strides or (1, 2, 2)
             branch_stage = p.branch_stage or 4
             num_tri = eval("p.num_c%d_block" % branch_stage) or (eval("num_c%d" % branch_stage) - 1)
 
@@ -449,32 +450,32 @@ def get_trident_resnet_backbone(trident_unit, trident_deform_unit, helper):
             if branch_stage == 2:
                 if p.fp16 and p.branch_rotates is not None:
                     c1 = X.to_fp32(c1, "stem_last_tofp32")
-                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, 1, "stage1", p)
+                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, c2_stride, "stage1", p)
                     c2 = X.to_fp16(c2, "stage1_last_tofp16")
                 else:
-                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, 1, "stage1", p)
-                c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
-                c4 = helper.resnet_c4(c3, num_c4, 2, 1, p.normalizer)
+                    c2 = build_trident_stage(c1, num_c2, num_tri, num_deform_c2, 256, c2_stride, "stage1", p)
+                c3 = helper.resnet_c3(c2, num_c3, c3_stride, 1, p.normalizer)
+                c4 = helper.resnet_c4(c3, num_c4, c4_stride, 1, p.normalizer)
 
             elif branch_stage == 3:
-                c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
+                c2 = helper.resnet_c2(c1, num_c2, c2_stride, 1, p.normalizer)
                 if p.fp16 and p.branch_rotates is not None:
                     c2 = X.to_fp32(c2, "stage1_last_tofp32")
-                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, 2, "stage2", p)
+                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, c3_stride, "stage2", p)
                     c3 = X.to_fp16(c3, "stage2_last_tofp16")
                 else:
-                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, 2, "stage2", p)
-                c4 = helper.resnet_c4(c3, num_c4, 2, 1, p.normalizer)
+                    c3 = build_trident_stage(c2, num_c3, num_tri, num_deform_c3, 512, c3_stride, "stage2", p)
+                c4 = helper.resnet_c4(c3, num_c4, c4_stride, 1, p.normalizer)
 
             elif branch_stage == 4:
-                c2 = helper.resnet_c2(c1, num_c2, 1, 1, p.normalizer)
-                c3 = helper.resnet_c3(c2, num_c3, 2, 1, p.normalizer)
+                c2 = helper.resnet_c2(c1, num_c2, c2_stride, 1, p.normalizer)
+                c3 = helper.resnet_c3(c2, num_c3, c3_stride, 1, p.normalizer)
                 if p.fp16 and p.branch_rotates is not None:
                     c3 = X.to_fp32(c3, "stage2_last_tofp32")
-                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, 2, "stage3", p)
+                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, c4_stride, "stage3", p)
                     c4 = X.to_fp16(c4, "stage3_last_tofp16")
                 else:
-                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, 2, "stage3", p)
+                    c4 = build_trident_stage(c3, num_c4, num_tri, num_deform_c4, 1024, c4_stride, "stage3", p)
 
             else:
                 raise ValueError("Unknown branch stage: %d" % branch_stage)
