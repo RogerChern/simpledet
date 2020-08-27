@@ -83,8 +83,10 @@ if __name__ == "__main__":
     from pycocotools.cocoeval import COCOeval
     from utils.roidb_to_coco import roidb_to_coco
     if pTest.coco.annotation is not None:
+        print("Loading annotation %s" % pTest.coco.annotation)
         coco = COCO(pTest.coco.annotation)
     else:
+        print("No annotation in coco format specified, converting from roidbs %s" % image_sets)
         coco = roidb_to_coco(roidbs_all)
 
     data_queue = Queue(100)
@@ -371,4 +373,5 @@ if __name__ == "__main__":
 
         t6_s = time.time()
         print("coco eval uses: %.1f" % (t6_s - t5_s))
+        print("Evaluation for %s end" % args.config)
 
