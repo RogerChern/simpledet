@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from typing import List, Dict, Tuple
+import inspect
 import numpy as np
 import mxnet as mx
 import mxnext as X
@@ -940,6 +941,170 @@ def filter_bbox_by_scale_range(detections: List[Dict], roi_records: List[Dict]) 
         filtered_detections.append(filtered_detection)
 
     return filtered_detections
+
+
+def filter_trident_branch_bbox_by_scale_range(num_branch: int, bbox_valid_ranges_on_original_input: List[Tuple[int, int]]):
+    assert num_branch == len(bbox_valid_ranges_on_original_input)
+    print("Using %s with param: %s" % (inspect.currentframe().f_code.co_name,
+                                       inspect.currentframe().f_locals[inspect.currentframe().f_code.co_varnames[1]]))
+
+    def process_det_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+        recid2roirec = {}
+        for rec in roi_records:
+            rec_id = int(rec['rec_id'])
+            recid2roirec[rec_id] = rec
+
+        filtered_detections = []
+        for detection in detections:
+            # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+            rec_id = int(detection['rec_id'])
+            record = recid2roirec[rec_id]
+            assert record['rec_id'] == detection['rec_id']
+
+            box = detection['bbox_xyxy']
+            cls_score = detection['cls_score']
+            # split num_branch * num_image into (num_branch, num_image)
+            branch_box = box.reshape((num_branch, -1) + box.shape[1:])
+            branch_cls_score = cls_score.reshape((num_branch, -1) + cls_score.shape[1:])
+
+            keep_box, keep_cls_score = [], []
+            for box, cls_score, (low, high) in zip(branch_box, branch_cls_score, bbox_valid_ranges_on_original_input):
+                high = 10000 if high == -1 else high
+                box_size = (box[:, 2] - box[:, 0] + 1.0) * (box[:, 3] - box[:, 1] + 1.0)
+                in_range_inds = (box_size < high ** 2) & (box_size > low ** 2)
+                keep_box.append(box[in_range_inds])
+                keep_cls_score.append(cls_score[in_range_inds])
+
+            filtered_detection = detection.copy()
+            filtered_detection['bbox_xyxy'] = np.concatenate(keep_box, axis=0)
+            filtered_detection['cls_score'] = np.concatenate(keep_cls_score, axis=0)
+            filtered_detections.append(filtered_detection)
+        return filtered_detections
+
+    return process_det_output
+
+
+def filter_trident_branch_bbox_by_scale_percentile(num_branch: int, bbox_valid_percentile: List[Tuple[float, float]]):
+    assert num_branch == len(bbox_valid_percentile)
+    print("Using %s with param: %s" % (inspect.currentframe().f_code.co_name,
+                                       inspect.currentframe().f_locals[inspect.currentframe().f_code.co_varnames[1]]))
+
+    def process_det_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+        recid2roirec = {}
+        for rec in roi_records:
+            rec_id = int(rec['rec_id'])
+            recid2roirec[rec_id] = rec
+
+        filtered_detections = []
+        for detection in detections:
+            # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+            rec_id = int(detection['rec_id'])
+            record = recid2roirec[rec_id]
+            assert record['rec_id'] == detection['rec_id']
+
+            box = detection['bbox_xyxy']
+            cls_score = detection['cls_score']
+            # split num_branch * num_image into (num_branch, num_image)
+            branch_box = box.reshape((num_branch, -1) + box.shape[1:])
+            branch_cls_score = cls_score.reshape((num_branch, -1) + cls_score.shape[1:])
+
+            keep_box, keep_cls_score = [], []
+            for box, cls_score, (low, high) in zip(branch_box, branch_cls_score, bbox_valid_percentile):
+                box_size = (box[:, 2] - box[:, 0] + 1.0) * (box[:, 3] - box[:, 1] + 1.0)
+                low, high = np.percentile(box_size, [low, high])
+                in_range_inds = (box_size <= high) & (box_size >= low)
+                keep_box.append(box[in_range_inds])
+                keep_cls_score.append(cls_score[in_range_inds])
+
+            filtered_detection = detection.copy()
+            filtered_detection['bbox_xyxy'] = np.concatenate(keep_box, axis=0)
+            filtered_detection['cls_score'] = np.concatenate(keep_cls_score, axis=0)
+            filtered_detections.append(filtered_detection)
+        return filtered_detections
+
+    return process_det_output
+
+
+def filter_trident_branch_bbox_by_aspect_ratio(num_branch: int, bbox_valid_aspect_ranges: List[Tuple[float, float]]):
+    assert num_branch == len(bbox_valid_aspect_ranges)
+    print("Using %s with param: %s" % (inspect.currentframe().f_code.co_name,
+                                       inspect.currentframe().f_locals[inspect.currentframe().f_code.co_varnames[1]]))
+
+    def process_det_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+        recid2roirec = {}
+        for rec in roi_records:
+            rec_id = int(rec['rec_id'])
+            recid2roirec[rec_id] = rec
+
+        filtered_detections = []
+        for detection in detections:
+            # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+            rec_id = int(detection['rec_id'])
+            record = recid2roirec[rec_id]
+            assert record['rec_id'] == detection['rec_id']
+
+            box = detection['bbox_xyxy']
+            cls_score = detection['cls_score']
+            # split num_branch * num_image into (num_branch, num_image)
+            branch_box = box.reshape((num_branch, -1) + box.shape[1:])
+            branch_cls_score = cls_score.reshape((num_branch, -1) + cls_score.shape[1:])
+
+            keep_box, keep_cls_score = [], []
+            for box, cls_score, (low, high) in zip(branch_box, branch_cls_score, bbox_valid_aspect_ranges):
+                box_aspect = (box[:, 3] - box[:, 1] + 1.0) / (box[:, 2] - box[:, 0] + 1.0)   # h / w
+                in_range_inds = (box_aspect < high) & (box_aspect > low)
+                keep_box.append(box[in_range_inds])
+                keep_cls_score.append(cls_score[in_range_inds])
+
+            filtered_detection = detection.copy()
+            filtered_detection['bbox_xyxy'] = np.concatenate(keep_box, axis=0)
+            filtered_detection['cls_score'] = np.concatenate(keep_cls_score, axis=0)
+            filtered_detections.append(filtered_detection)
+        return filtered_detections
+
+    return process_det_output
+
+
+def filter_trident_branch_bbox_by_aspect_ratio_percentile(num_branch: int, bbox_valid_aspect_percentile: List[Tuple[float, float]]):
+    assert num_branch == len(bbox_valid_aspect_percentile)
+    print("Using %s with param: %s" % (inspect.currentframe().f_code.co_name,
+                                       inspect.currentframe().f_locals[inspect.currentframe().f_code.co_varnames[1]]))
+
+    def process_det_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
+        recid2roirec = {}
+        for rec in roi_records:
+            rec_id = int(rec['rec_id'])
+            recid2roirec[rec_id] = rec
+
+        filtered_detections = []
+        for detection in detections:
+            # import ipdb; ipdb.set_trace()
+            # loader could not give deterministic order of samples, so we have to rematch detections and roi_records
+            rec_id = int(detection['rec_id'])
+            record = recid2roirec[rec_id]
+            assert record['rec_id'] == detection['rec_id']
+
+            box = detection['bbox_xyxy']
+            cls_score = detection['cls_score']
+            # split num_branch * num_image into (num_branch, num_image)
+            branch_box = box.reshape((num_branch, -1) + box.shape[1:])
+            branch_cls_score = cls_score.reshape((num_branch, -1) + cls_score.shape[1:])
+
+            keep_box, keep_cls_score = [], []
+            for box, cls_score, (low, high) in zip(branch_box, branch_cls_score, bbox_valid_aspect_percentile):
+                box_aspect = (box[:, 3] - box[:, 1] + 1.0) / (box[:, 2] - box[:, 0] + 1.0)   # h / w
+                low, high = np.percentile(box_aspect, [low, high])
+                in_range_inds = (box_aspect <= high) & (box_aspect >= low)
+                keep_box.append(box[in_range_inds])
+                keep_cls_score.append(cls_score[in_range_inds])
+
+            filtered_detection = detection.copy()
+            filtered_detection['bbox_xyxy'] = np.concatenate(keep_box, axis=0)
+            filtered_detection['cls_score'] = np.concatenate(keep_cls_score, axis=0)
+            filtered_detections.append(filtered_detection)
+        return filtered_detections
+
+    return process_det_output
 
 
 def flip_bbox_for_output(detections: List[Dict], roi_records: List[Dict]) -> List[Dict]:
