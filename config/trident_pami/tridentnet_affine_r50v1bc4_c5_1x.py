@@ -7,8 +7,7 @@ from symbol.builder import RoiAlign as RoiExtractor
 from symbol.builder import BboxC5V1Head as BboxHead
 from mxnext.complicate import normalizer_factory
 
-
-import numpy as np
+from numpy import pi
 
 
 def get_config(is_train):
@@ -23,9 +22,9 @@ def get_config(is_train):
         train_scaleaware = False
         test_scaleaware = False
         branch_ids = range(num_branch) if is_train else [1]
-        branch_dilates = [1, 2, 3] if is_train else [2]
-        branch_rotates = [0, 0, 0] if is_train else [0]
-        valid_ranges = [(0, -1), (0, -1), (0, -1)] if is_train else [(0, -1)]
+        branch_dilates = [1, 2, 3, 2, 2] if is_train else [2]
+        branch_rotates = [0, 0, 0, pi / 4, -pi / 4] if is_train else [0]
+        valid_ranges = [(0, -1), (0, -1), (0, -1), (0, -1), (0, -1)] if is_train else [(0, -1)]
         valid_ranges_on_origin = True
         branch_bn_shared = True
         branch_conv_shared = True
