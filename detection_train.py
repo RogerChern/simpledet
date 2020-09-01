@@ -281,6 +281,7 @@ def train_net(config, args):
     if profile:
         mx.profiler.set_config(profile_all=True, filename=os.path.join(save_path, "profile.json"))
 
+    pMom = pOpt.momentum_update
     # train
     mod.fit(
         train_data=train_data,
@@ -297,10 +298,12 @@ def train_net(config, args):
         begin_epoch=begin_epoch,
         num_epoch=end_epoch,
         profile=profile,
-        use_param_momentum=pOpt.momentum_update,
-        param_momentum=(pOpt.momentum_update and pOpt.momentum_update.momentum) or -1,
-        zero_init_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.zero_init) or False,
-        swap_param_momentum=(pOpt.momentum_update and pOpt.momentum_update.swap) or False
+        use_param_momentum=pMom,
+        param_momentum=(pMom and pMom.momentum) or -1,
+        zero_init_param_momentum=(pMom and pMom.zero_init) or False,
+        swap_param_momentum=(pMom and pMom.swap) or False,
+        momentum_checkpoint_save_iter=(pMom and pMom.save_iter and pMom.save_iter // kv.num_workers) or -1,
+        momentum_checkpoint_save_prefix=model_prefix,
     )
 
     logging.info("Training has done")

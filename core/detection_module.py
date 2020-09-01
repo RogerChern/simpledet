@@ -918,7 +918,8 @@ class DetModule(BaseModule):
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
             validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False,
             use_param_momentum=False, param_momentum=0.99, zero_init_param_momentum=False,
-            swap_param_momentum=False):
+            swap_param_momentum=False, momentum_checkpoint_save_iter=-1,
+            momentum_checkpoint_save_prefix=None):
 
         """Trains the module parameters.
         Checkout `Module Tutorial <http://mxnet.io/tutorials/basic/module.html>`_ to see
@@ -1072,9 +1073,22 @@ class DetModule(BaseModule):
                         if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
                             self.arg_params_bank[k] = param_momentum * self.arg_params_bank[k] + \
                                 (1 - param_momentum) * arg_params[k].astype(np.float32)
+                    # aux_params mainly contains mmean and mvar which are automatically fused into weight
                     for k in aux_params:
                         self.aux_params_bank[k] = param_momentum * self.aux_params_bank[k] + \
                             (1 - param_momentum) * aux_params[k].astype(np.float32)
+
+                    if momentum_checkpoint_save_iter != -1 and total_iter > 0 and total_iter % momentum_checkpoint_save_iter == 0:
+                        # sync arg and aux
+                        arg_params, aux_params = self.get_params()
+                        # bank is always fp32 while params may be either fp32 or fp16
+                        arg_bank = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
+                        aux_bank = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
+                        iter_no = 1000 + total_iter // momentum_checkpoint_save_iter
+                        if self._kvstore.rank == 0:
+                            prefix = momentum_checkpoint_save_prefix
+                            mxnet.model.save_checkpoint(prefix, iter_no, self.symbol, arg_params, aux_params)
+                            mxnet.model.save_checkpoint(prefix + '_momentum', iter_no, self.symbol, arg_bank, aux_bank)
 
             # one epoch of training is finished
             for name, val in eval_name_vals:
