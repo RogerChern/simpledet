@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument('--ema', action='store_true')
     parser.add_argument('--skip-coco-metric', action='store_true')
     parser.add_argument('--skip-ten-ap-metric', action='store_true')
-    parser.add_argument('--max-det', type=int, default=None)
+    parser.add_argument('--max-det', type=int, default=100)
     args = parser.parse_args()
 
     if args.gpus:
