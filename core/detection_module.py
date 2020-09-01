@@ -279,7 +279,7 @@ class DetModule(BaseModule):
 
     def init_params(self, initializer=Uniform(0.01), arg_params=None, aux_params=None,
                     allow_missing=False, force_init=False, allow_extra=False,
-                    use_param_momentum=False, zero_init_param_momentum=False):
+                    use_ema=False, zero_init_ema=False):
         """Initializes the parameters and auxiliary states.
 
         Parameters
@@ -341,23 +341,30 @@ class DetModule(BaseModule):
         self._exec_group.set_params(self._arg_params, self._aux_params,
                                     allow_extra=allow_extra)
 
-        if use_param_momentum:
-            self.arg_params_bank = {}
-            self.aux_params_bank = {}
-            for k in self._exec_group.param_names:
-                print("init ema bank for arg %s" % k)
-                if zero_init_param_momentum and k not in self._exec_group.fixed_param_names:
-                    self.arg_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
+        if use_ema:
+            self._arg_params_ema = {}
+            self._aux_params_ema = {}
+            # param_names = arg_params - inputs
+            for k in self._param_names:
+                if zero_init_ema and k not in self._fixed_param_names:
+                    self.logger.info("init ema for arg_param: %s as zeros" % k)
+                    # ema is initialized and updated on the 0-th gpu, so we use arg_dict of the 0-th exec
+                    self._arg_params_ema[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
                 else:
-                    self.arg_params_bank[k] = self._exec_group.execs[0].arg_dict[k].copy()
-                self.arg_params_bank[k] = self.arg_params_bank[k].astype(np.float32)
-            for k in self._exec_group.execs[0].aux_dict:
-                print("init ema bank for aux %s" % k)
-                if zero_init_param_momentum:
-                    self.aux_params_bank[k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
+                    self.logger.info("init ema for arg_param: %s from arg_dict" % k)
+                    # ema is initialized and updated on the 0-th gpu, so we use arg_dict of the 0-th exec
+                    self._arg_params_ema[k] = self._exec_group.execs[0].arg_dict[k].copy()
+                self._arg_params_ema[k] = self._arg_params_ema[k].astype(np.float32)
+            for k in self._aux_names:
+                if zero_init_ema:
+                    self.logger.info("init ema for aux_param: %s as zeros" % k)
+                    # ema is initialized and updated on the 0-th gpu, so we use aux_dict of the 0-th exec
+                    self._aux_params_ema[k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
                 else:
-                    self.aux_params_bank[k] = self._exec_group.execs[0].aux_dict[k].copy()
-                self.aux_params_bank[k] = self.aux_params_bank[k].astype(np.float32)
+                    self.logger.info("init ema for aux_param: %s from aux_dict" % k)
+                    # ema is initialized and updated on the 0-th gpu, so we use aux_dict of the 0-th exec
+                    self._aux_params_ema[k] = self._exec_group.execs[0].aux_dict[k].copy()
+                self._aux_params_ema[k] = self._aux_params_ema[k].astype(np.float32)
 
     def set_params(self, arg_params, aux_params, allow_missing=False, force_init=True,
                    allow_extra=False):
@@ -917,9 +924,8 @@ class DetModule(BaseModule):
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
             validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False,
-            use_param_momentum=False, param_momentum=0.99, zero_init_param_momentum=False,
-            swap_param_momentum=False, momentum_checkpoint_save_iter=-1,
-            momentum_checkpoint_save_prefix=None):
+            use_ema=False, ema_momentum=0.99, zero_init_ema=False,
+            swap_ema_src=False, ema_save_iter=-1, ema_save_prefix=None):
 
         """Trains the module parameters.
         Checkout `Module Tutorial <http://mxnet.io/tutorials/basic/module.html>`_ to see
@@ -997,8 +1003,8 @@ class DetModule(BaseModule):
         if monitor is not None:
             self.install_monitor(monitor)
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
-                         allow_missing=allow_missing, force_init=force_init, use_param_momentum=use_param_momentum,
-                         zero_init_param_momentum=zero_init_param_momentum)
+                         allow_missing=allow_missing, force_init=force_init, use_ema=use_ema,
+                         zero_init_ema=zero_init_ema)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
                             optimizer_params=optimizer_params)
 
@@ -1006,6 +1012,25 @@ class DetModule(BaseModule):
             validation_metric = eval_metric
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
+
+        # log ema related hyperparameters
+        self.logger.info("use_ema: {}".format(use_ema))
+        self.logger.info("ema_momentum: {}".format(ema_momentum))
+        self.logger.info("zero_init_ema: {}".format(zero_init_ema))
+        self.logger.info("swap_ema_src: {}".format(swap_ema_src))
+        self.logger.info("ema_save_iter: {}".format(ema_save_iter))
+        self.logger.info("ema_save_prefix: {}".format(ema_save_prefix))
+        # log names of args and auxs in the ema
+        for k in self._arg_params:
+            assert k in self._arg_params_ema
+            if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
+                self.logger.info("%s updated by ema: True" % k)
+            else:
+                self.logger.info("%s updated by ema: False" % k)
+        # aux_params mainly contains mmean and mvar which are automatically fused into weight
+        for k in self._aux_params:
+            assert k in self._aux_params_ema
+            self.logger.info("%s managed by ema: True" % k)
 
         ################################################################################
         # training loop
@@ -1066,29 +1091,29 @@ class DetModule(BaseModule):
                     mx.profiler.set_state("stop")
                     mx.profiler.dump()
 
-                if use_param_momentum:
+                if use_ema:
                     arg_params = self._exec_group.execs[0].arg_dict
                     aux_params = self._exec_group.execs[0].aux_dict
                     for k in arg_params:
                         if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
-                            self.arg_params_bank[k] = param_momentum * self.arg_params_bank[k] + \
-                                (1 - param_momentum) * arg_params[k].astype(np.float32)
+                            self._arg_params_ema[k] = ema_momentum * self._arg_params_ema[k] + \
+                                (1 - ema_momentum) * arg_params[k].astype(np.float32)
                     # aux_params mainly contains mmean and mvar which are automatically fused into weight
                     for k in aux_params:
-                        self.aux_params_bank[k] = param_momentum * self.aux_params_bank[k] + \
-                            (1 - param_momentum) * aux_params[k].astype(np.float32)
+                        self._aux_params_ema[k] = ema_momentum * self._aux_params_ema[k] + \
+                            (1 - ema_momentum) * aux_params[k].astype(np.float32)
 
-                    if momentum_checkpoint_save_iter != -1 and total_iter > 0 and total_iter % momentum_checkpoint_save_iter == 0:
+                    if ema_save_iter != -1 and total_iter > 0 and total_iter % ema_save_iter == 0:
                         # sync arg and aux
                         arg_params, aux_params = self.get_params()
-                        # bank is always fp32 while params may be either fp32 or fp16
-                        arg_bank = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
-                        aux_bank = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
-                        iter_no = 1000 + total_iter // momentum_checkpoint_save_iter
+                        # ema is always fp32 while params may be either fp32 or fp16
+                        arg_ema = {k: v.astype(arg_params[k]) for k, v in self._arg_params_ema.items()}
+                        aux_ema = {k: v.astype(aux_params[k]) for k, v in self._aux_params_ema.items()}
+                        iter_no = 1000 + total_iter // ema_save_iter
                         if self._kvstore.rank == 0:
-                            prefix = momentum_checkpoint_save_prefix
+                            prefix = ema_save_prefix
                             mxnet.model.save_checkpoint(prefix, iter_no, self.symbol, arg_params, aux_params)
-                            mxnet.model.save_checkpoint(prefix + '_momentum', iter_no, self.symbol, arg_bank, aux_bank)
+                            mxnet.model.save_checkpoint(prefix + '_ema', iter_no, self.symbol, arg_ema, aux_ema)
 
             # one epoch of training is finished
             for name, val in eval_name_vals:
@@ -1098,19 +1123,19 @@ class DetModule(BaseModule):
 
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
-            if use_param_momentum:
+            if use_ema:
                 # bank is always fp32 while params may be either fp32 or fp16
-                arg_bank_to_device = {k: v.astype(arg_params[k]) for k, v in self.arg_params_bank.items()}
-                aux_bank_to_device = {k: v.astype(aux_params[k]) for k, v in self.aux_params_bank.items()}
-            if swap_param_momentum:
-                self.set_params(arg_bank_to_device, aux_bank_to_device)
+                arg_ema = {k: v.astype(arg_params[k]) for k, v in self._arg_params_ema.items()}
+                aux_ema = {k: v.astype(aux_params[k]) for k, v in self._aux_params_ema.items()}
+            if swap_ema_src:
+                self.set_params(arg_ema, aux_ema)
             else:
                 self.set_params(arg_params, aux_params)
 
             if epoch_end_callback is not None and self._kvstore.rank == 0:
                 for callback in _as_list(epoch_end_callback):
-                    if use_param_momentum:
-                        callback(epoch, self.symbol, arg_params, aux_params, arg_bank_to_device, aux_bank_to_device)
+                    if use_ema:
+                        callback(epoch, self.symbol, arg_params, aux_params, arg_ema, aux_ema)
                     else:
                         callback(epoch, self.symbol, arg_params, aux_params)
 

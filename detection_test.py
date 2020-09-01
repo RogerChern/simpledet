@@ -121,7 +121,7 @@ if __name__ == "__main__":
         data_names = [k[0] for k in loader.provide_data]
 
         if index_split == 0:
-            arg_params, aux_params = load_checkpoint(pTest.model.prefix + ("_momentum" if args.ema else ""), args.epoch or pTest.model.epoch)
+            arg_params, aux_params = load_checkpoint(pTest.model.prefix + ("_ema" if args.ema else ""), args.epoch or pTest.model.epoch)
             if pModel.process_weight is not None:
                 pModel.process_weight(sym, arg_params, aux_params)
 
