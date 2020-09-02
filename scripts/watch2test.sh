@@ -22,6 +22,7 @@ last_epoch_file=$exp_path/last_epoch.$cksum
 # read in last epoch if exist
 if [[ -e $last_epoch_file ]]; then
 	epoch=$(cat $last_epoch_file)
+	let epoch++
 fi
 
 if [[ -n $postfix ]]; then
