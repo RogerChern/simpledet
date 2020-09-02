@@ -65,10 +65,6 @@ def train_net(config, args):
     # setup multi-gpu
     input_batch_size = pKv.batch_image * len(ctx)
 
-    # print config
-    # if rank == 0:
-    #     logger.info(pprint.pformat(config))
-
     # load dataset and prepare imdb for training
     image_sets = pDataset.image_set
     roidbs = [pkl.load(open("data/cache/{}.roidb".format(i), "rb"), encoding="latin1") for i in image_sets]
