@@ -23,7 +23,7 @@ more `Executor` for data parallelization.
 import time
 import logging
 import warnings
-from collections import namedtuple
+from collections import namedtuple, Iterable
 
 import numpy as np
 import mxnet
@@ -279,7 +279,7 @@ class DetModule(BaseModule):
 
     def init_params(self, initializer=Uniform(0.01), arg_params=None, aux_params=None,
                     allow_missing=False, force_init=False, allow_extra=False,
-                    use_ema=False, zero_init_ema=False):
+                    use_ema=False, zero_init_ema=False, ema_momentum=None):
         """Initializes the parameters and auxiliary states.
 
         Parameters
@@ -342,29 +342,36 @@ class DetModule(BaseModule):
                                     allow_extra=allow_extra)
 
         if use_ema:
-            self._arg_params_ema = {}
-            self._aux_params_ema = {}
+            num_ema = len(ema_momentum)
+            self._arg_params_ema = [{} for _ in range(num_ema)]
+            self._aux_params_ema = [{} for _ in range(num_ema)]
             # param_names = arg_params - inputs
             for k in self._param_names:
                 if zero_init_ema and k not in self._fixed_param_names:
                     self.logger.info("init ema for arg_param: %s as zeros" % k)
                     # ema is initialized and updated on the 0-th gpu, so we use arg_dict of the 0-th exec
-                    self._arg_params_ema[k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
+                    for i in range(num_ema):
+                        self._arg_params_ema[i][k] = nd.zeros_like(self._exec_group.execs[0].arg_dict[k])
                 else:
                     self.logger.info("init ema for arg_param: %s from arg_dict" % k)
                     # ema is initialized and updated on the 0-th gpu, so we use arg_dict of the 0-th exec
-                    self._arg_params_ema[k] = self._exec_group.execs[0].arg_dict[k].copy()
-                self._arg_params_ema[k] = self._arg_params_ema[k].astype(np.float32)
+                    for i in range(num_ema):
+                        self._arg_params_ema[i][k] = self._exec_group.execs[0].arg_dict[k].copy()
+                for i in range(num_ema):
+                    self._arg_params_ema[i][k] = self._arg_params_ema[i][k].astype(np.float32)
             for k in self._aux_names:
                 if zero_init_ema:
                     self.logger.info("init ema for aux_param: %s as zeros" % k)
                     # ema is initialized and updated on the 0-th gpu, so we use aux_dict of the 0-th exec
-                    self._aux_params_ema[k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
+                    for i in range(num_ema):
+                        self._aux_params_ema[i][k] = nd.zeros_like(self._exec_group.execs[0].aux_dict[k])
                 else:
                     self.logger.info("init ema for aux_param: %s from aux_dict" % k)
                     # ema is initialized and updated on the 0-th gpu, so we use aux_dict of the 0-th exec
-                    self._aux_params_ema[k] = self._exec_group.execs[0].aux_dict[k].copy()
-                self._aux_params_ema[k] = self._aux_params_ema[k].astype(np.float32)
+                    for i in range(num_ema):
+                        self._aux_params_ema[i][k] = self._exec_group.execs[0].aux_dict[k].copy()
+                for i in range(num_ema):
+                    self._aux_params_ema[i][k] = self._aux_params_ema[i][k].astype(np.float32)
 
     def set_params(self, arg_params, aux_params, allow_missing=False, force_init=True,
                    allow_extra=False):
@@ -924,7 +931,7 @@ class DetModule(BaseModule):
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
             validation_metric=None, monitor=None, sparse_row_id_fn=None, profile=False,
-            use_ema=False, ema_momentum=0.99, zero_init_ema=False,
+            use_ema=False, ema_momentum=None, zero_init_ema=False,
             swap_ema_src=False, ema_save_iter=-1, ema_save_prefix=None):
 
         """Trains the module parameters.
@@ -994,6 +1001,9 @@ class DetModule(BaseModule):
         """
         assert num_epoch is not None, 'please specify number of epochs'
 
+        # preprocess ema_momentum, make it always a list
+        ema_momentum = ema_momentum if isinstance(ema_momentum, Iterable) else [ema_momentum]
+
         self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label,
                   for_training=True, force_rebind=force_rebind)
 
@@ -1004,7 +1014,7 @@ class DetModule(BaseModule):
             self.install_monitor(monitor)
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
                          allow_missing=allow_missing, force_init=force_init, use_ema=use_ema,
-                         zero_init_ema=zero_init_ema)
+                         zero_init_ema=zero_init_ema, ema_momentum=ema_momentum)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
                             optimizer_params=optimizer_params)
 
@@ -1013,24 +1023,28 @@ class DetModule(BaseModule):
         if not isinstance(eval_metric, metric.EvalMetric):
             eval_metric = metric.create(eval_metric)
 
-        # log ema related hyperparameters
-        self.logger.info("use_ema: {}".format(use_ema))
-        self.logger.info("ema_momentum: {}".format(ema_momentum))
-        self.logger.info("zero_init_ema: {}".format(zero_init_ema))
-        self.logger.info("swap_ema_src: {}".format(swap_ema_src))
-        self.logger.info("ema_save_iter: {}".format(ema_save_iter))
-        self.logger.info("ema_save_prefix: {}".format(ema_save_prefix))
-        # log names of args and auxs in the ema
-        for k in self._arg_params:
-            assert k in self._arg_params_ema
-            if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
-                self.logger.info("%s updated by ema: True" % k)
-            else:
-                self.logger.info("%s updated by ema: False" % k)
-        # aux_params mainly contains mmean and mvar which are automatically fused into weight
-        for k in self._aux_params:
-            assert k in self._aux_params_ema
-            self.logger.info("%s managed by ema: True" % k)
+        ################################################################################
+        # ema related start
+        ################################################################################
+        if use_ema:
+            # log ema related hyperparameters
+            self.logger.info("use_ema: {}".format(use_ema))
+            self.logger.info("ema_momentum: {}".format(ema_momentum))
+            self.logger.info("zero_init_ema: {}".format(zero_init_ema))
+            self.logger.info("swap_ema_src: {}".format(swap_ema_src))
+            self.logger.info("ema_save_iter: {}".format(ema_save_iter))
+            self.logger.info("ema_save_prefix: {}".format(ema_save_prefix))
+            # log names of args and auxs in the ema
+            for k in self._arg_params:
+                assert k in self._arg_params_ema[0]
+                if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
+                    self.logger.info("%s updated by ema: True" % k)
+                else:
+                    self.logger.info("%s updated by ema: False" % k)
+            # aux_params mainly contains mmean and mvar which are automatically fused into weight
+            for k in self._aux_params:
+                assert k in self._aux_params_ema[0]
+                self.logger.info("%s managed by ema: True" % k)
 
         ################################################################################
         # training loop
@@ -1092,28 +1106,36 @@ class DetModule(BaseModule):
                     mx.profiler.dump()
 
                 if use_ema:
+                    num_ema = len(ema_momentum)
                     arg_params = self._exec_group.execs[0].arg_dict
                     aux_params = self._exec_group.execs[0].aux_dict
                     for k in arg_params:
                         if k in self._exec_group.param_names and k not in self._exec_group.fixed_param_names:
-                            self._arg_params_ema[k] = ema_momentum * self._arg_params_ema[k] + \
-                                (1 - ema_momentum) * arg_params[k].astype(np.float32)
+                            for i in range(num_ema):
+                                self._arg_params_ema[i][k] = ema_momentum[i] * self._arg_params_ema[i][k] + \
+                                    (1 - ema_momentum[i]) * arg_params[k].astype(np.float32)
                     # aux_params mainly contains mmean and mvar which are automatically fused into weight
                     for k in aux_params:
-                        self._aux_params_ema[k] = ema_momentum * self._aux_params_ema[k] + \
-                            (1 - ema_momentum) * aux_params[k].astype(np.float32)
+                        for i in range(num_ema):
+                            self._aux_params_ema[i][k] = ema_momentum[i] * self._aux_params_ema[i][k] + \
+                                (1 - ema_momentum[i]) * aux_params[k].astype(np.float32)
 
                     if ema_save_iter != -1 and total_iter > 0 and total_iter % ema_save_iter == 0:
                         # sync arg and aux
                         arg_params, aux_params = self.get_params()
-                        # ema is always fp32 while params may be either fp32 or fp16
-                        arg_ema = {k: v.astype(arg_params[k]) for k, v in self._arg_params_ema.items()}
-                        aux_ema = {k: v.astype(aux_params[k]) for k, v in self._aux_params_ema.items()}
                         iter_no = 1000 + total_iter // ema_save_iter
+                        prefix = ema_save_prefix
+                        # save ema copys
+                        for i in range(num_ema):
+                            # ema is always fp32 while params may be either fp32 or fp16
+                            arg_ema = {k: v.astype(arg_params[k]) for k, v in self._arg_params_ema[i].items()}
+                            aux_ema = {k: v.astype(aux_params[k]) for k, v in self._aux_params_ema[i].items()}
+                            if self._kvstore.rank == 0:
+                                postfix = '_ema_%s' % str(ema_momentum[i])[2:]
+                                mxnet.model.save_checkpoint(prefix + postfix, iter_no, self.symbol, arg_ema, aux_ema)
+                        # save src copy
                         if self._kvstore.rank == 0:
-                            prefix = ema_save_prefix
                             mxnet.model.save_checkpoint(prefix, iter_no, self.symbol, arg_params, aux_params)
-                            mxnet.model.save_checkpoint(prefix + '_ema', iter_no, self.symbol, arg_ema, aux_ema)
 
             # one epoch of training is finished
             for name, val in eval_name_vals:
@@ -1123,21 +1145,11 @@ class DetModule(BaseModule):
 
             # sync aux params across devices
             arg_params, aux_params = self.get_params()
-            if use_ema:
-                # bank is always fp32 while params may be either fp32 or fp16
-                arg_ema = {k: v.astype(arg_params[k]) for k, v in self._arg_params_ema.items()}
-                aux_ema = {k: v.astype(aux_params[k]) for k, v in self._aux_params_ema.items()}
-            if swap_ema_src:
-                self.set_params(arg_ema, aux_ema)
-            else:
-                self.set_params(arg_params, aux_params)
+            self.set_params(arg_params, aux_params)
 
             if epoch_end_callback is not None and self._kvstore.rank == 0:
                 for callback in _as_list(epoch_end_callback):
-                    if use_ema:
-                        callback(epoch, self.symbol, arg_params, aux_params, arg_ema, aux_ema)
-                    else:
-                        callback(epoch, self.symbol, arg_params, aux_params)
+                    callback(epoch, self.symbol, arg_params, aux_params)
 
             # end of 1 epoch, reset the data-iter for another epoch
             train_data.reset()
