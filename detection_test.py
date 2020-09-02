@@ -1,8 +1,10 @@
 import datetime
 import os
+import logging
 import math
 import pprint
 import time
+import zlib
 
 from core.detection_module import DetModule
 from core.detection_input import Loader
@@ -30,7 +32,7 @@ def parse_args():
     parser.add_argument('--result-path', type=str, default=None)
     parser.add_argument('--classwise', action='store_true')
     parser.add_argument('--no-eval', action='store_true')
-    parser.add_argument('--ema', action='store_true')
+    parser.add_argument('--postfix', type=str, default="")
     parser.add_argument('--skip-coco-metric', action='store_true')
     parser.add_argument('--skip-ten-ap-metric', action='store_true')
     parser.add_argument('--max-det', type=int, default=100)
@@ -38,6 +40,9 @@ def parse_args():
 
     if args.gpus:
         args.gpus = [int(_) for _ in args.gpus.strip().split(',')]
+
+    if args.postfix != "":
+        args.postfix = "_" + args.postfix
 
     config = importlib.import_module(args.config.replace('.py', '').replace('/', '.'))
     return config, args
@@ -63,7 +68,12 @@ if __name__ == "__main__":
     from utils.logger import config_logger
     save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
-    config_logger(os.path.join(save_path, "log_det_test_%s.txt" % time_str))
+    ep_str = args.epoch or pTest.model.epoch
+    ckpt_path = "%s-%04d.params" % (pTest.model.prefix + args.postfix, args.epoch or pTest.model.epoch)
+    with open(ckpt_path, 'rb') as fin:
+        ckpt_cksum = hex(zlib.adler32(fin.read()))
+    config_logger(os.path.join(save_path, "log_det_test%s_ep%d_%s_%s.txt" % (args.postfix, ep_str, ckpt_cksum, time_str)))
+    logging.info("adler32 checksum for %s: %s" % (ckpt_path, ckpt_cksum))
     # hijack all print with logger.info
     import builtins, logging
     logger = logging.getLogger()
@@ -121,7 +131,7 @@ if __name__ == "__main__":
         data_names = [k[0] for k in loader.provide_data]
 
         if index_split == 0:
-            arg_params, aux_params = load_checkpoint(pTest.model.prefix + ("_ema" if args.ema else ""), args.epoch or pTest.model.epoch)
+            arg_params, aux_params = load_checkpoint(pTest.model.prefix + args.postfix, args.epoch or pTest.model.epoch)
             if pModel.process_weight is not None:
                 pModel.process_weight(sym, arg_params, aux_params)
 
