@@ -14,6 +14,7 @@ from utils.memonger_v2 import search_plan_to_layer
 from utils.lr_scheduler import WarmupMultiFactorScheduler, LRSequential, AdvancedLRScheduler
 from utils.load_model import load_checkpoint
 from utils.patch_config import patch_config_as_nothrow
+from utils.logger import config_logger, log_config
 
 import mxnet as mx
 import numpy as np
@@ -49,9 +50,10 @@ def train_net(config, args):
     # for distributed training using shared file system
     os.makedirs(save_path, exist_ok=True)
 
-    from utils.logger import config_logger
+    # config logging utility and log the config file
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     config_logger(os.path.join(save_path, "log_train_%s.txt" % time_str))
+    log_config(config.__file__)
 
     model_prefix = os.path.join(save_path, "checkpoint")
 

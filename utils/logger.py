@@ -30,3 +30,9 @@ def config_logger(path):
     console.setLevel(logging.INFO)
     console.setFormatter(formatter)
     logging.getLogger().addHandler(console)
+
+
+def log_config(config_path):
+    with open(config_path) as fin:
+        logging.info('\n' + fin.read())
+

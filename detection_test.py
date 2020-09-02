@@ -1,3 +1,4 @@
+import builtins
 import datetime
 import os
 import logging
@@ -11,6 +12,7 @@ from core.detection_input import Loader
 from utils.load_model import load_checkpoint
 from utils.patch_config import patch_config_as_nothrow
 from utils.coco_utils import official_summary, ap_at_ten_iou_thr_summary
+from utils.logger import config_logger, log_config
 
 from functools import reduce
 from queue import Queue
@@ -65,7 +67,7 @@ if __name__ == "__main__":
     pOpt = patch_config_as_nothrow(pOpt)
     pTest = patch_config_as_nothrow(pTest)
 
-    from utils.logger import config_logger
+    # config logging utility and log the config file
     save_path = os.path.join("experiments", pGen.name)
     time_str = datetime.datetime.fromtimestamp(time.time()).strftime('UTC+8_%Y_%m_%d_%H_%M_%S')
     ep_str = args.epoch or pTest.model.epoch
@@ -73,9 +75,10 @@ if __name__ == "__main__":
     with open(ckpt_path, 'rb') as fin:
         ckpt_cksum = hex(zlib.adler32(fin.read()))
     config_logger(os.path.join(save_path, "log_det_test%s_ep%d_%s_%s.txt" % (args.postfix, ep_str, ckpt_cksum, time_str)))
+    log_config(config.__file__)
     logging.info("adler32 checksum for %s: %s" % (ckpt_path, ckpt_cksum))
-    # hijack all print with logger.info
-    import builtins, logging
+
+    # hijack all print with logger.info since 3rd party lib like pycocotools does not use logging
     logger = logging.getLogger()
     builtin_print = builtins.print
     def hijack_print_with_logging(msg):
