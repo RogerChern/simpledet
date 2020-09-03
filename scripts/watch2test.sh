@@ -4,7 +4,7 @@ set -x
 set -e
 
 if [[ $# -lt 2 || $# -gt 4 ]]; then
-	echo "usage: $0 config_file gpus [postfix] [epoch]"
+	echo "usage: $0 config_file gpus [postfix] [epoch] [timeout]"
 	exit -1
 fi
 
@@ -14,6 +14,7 @@ postfix=$3
 epoch=${4:-1001}
 cksum=$(echo ${config}${postfix} | md5sum | awk '{print $1}')
 cksum=${cksum:0:8}
+timeout=${5:-1000}
 
 config_basename=$(basename $config)
 exp_path=experiments/${config_basename/\.py/}
@@ -36,17 +37,21 @@ fi
 # process old checkpoints before watchdog start
 while [[ -e $exp_path/$ckpt_pattern-$epoch.params ]];
 do
-	python detection_test.py --config $config --gpus $gpus --epoch $epoch $postfix_args
-	echo -n $epoch > $last_epoch_file
-	let epoch++
+	timeout $timeout python detection_test.py --config $config --gpus $gpus --epoch $epoch $postfix_args
+	if [[ $? -eq 0 ]]; then
+		echo -n $epoch > $last_epoch_file
+		let epoch++
+	fi
 done
 
 # process incoming checkpoints
 inotifywait -e create --format %f -m $exp_path | while read res
 do
 	if [[ $res == $ckpt_pattern-$epoch.params ]]; then
-		python detection_test.py --config $config --gpus $gpus --epoch $epoch $postfix_args
-		echo -n $epoch > $last_epoch_file
-		let epoch++
+		timeout $timeout python detection_test.py --config $config --gpus $gpus --epoch $epoch $postfix_args
+		if [[ $? -eq 0 ]]; then
+			echo -n $epoch > $last_epoch_file
+			let epoch++
+		fi
 	fi
 done
