@@ -44,7 +44,7 @@ class RetinaNetHead(RpnHead):
 
         # init bias for cls
         prior_prob = 0.01
-        pi = -math.log((1-prior_prob) / prior_prob)
+        pi = -math.log((1 - prior_prob) / prior_prob)
 
         # shared classification weight and bias
         self.cls_conv1_weight = X.var("cls_conv1_weight", init=X.gauss(std=0.01))
@@ -262,7 +262,7 @@ class RetinaNetHead(RpnHead):
             # (N, A * C, H, W) -> (N, A, C, H * W)
             cls_logit = X.reshape(
                 data=cls_logit_dict["stride%s" % s],
-                shape=(0, num_base_anchor, num_class-1, -1),
+                shape=(0, num_base_anchor, num_class - 1, -1),
                 name="cls_stride%s_reshape" % s
             )
             # (N, A, C, H * W) -> (N, A, H * W, C)
@@ -315,11 +315,10 @@ class RetinaNetHead(RpnHead):
                 name="cls_loss"
             )
 
-        scalar = 0.11
         # regression loss
         bbox_loss = bbox_weight * X.smooth_l1(
             data=bbox_delta_concat - bbox_target,
-            scalar=math.sqrt(1/scalar),
+            scalar=(p.regress_target and p.regress_target.smooth_l1_scalar) or math.sqrt(1 / 0.11),
             name="bbox_loss"
         )
         if sync_loss:
