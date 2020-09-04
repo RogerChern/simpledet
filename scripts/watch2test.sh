@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -x
-set -e
 
 if [[ $# -lt 2 || $# -gt 4 ]]; then
 	echo "usage: $0 config_file gpus [postfix] [epoch] [timeout]"
