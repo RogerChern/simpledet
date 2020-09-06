@@ -7,6 +7,7 @@ import tqdm
 import cv2
 import numpy as np
 
+from models.rotation.poly_utils import align_quadruplet_corner_to_rectangle, convert_aligned_quadruplet_to_rotated_bbox
 
 label_map = {
     "plane": 1,
@@ -39,7 +40,7 @@ def parse_args():
     return args.data_dir, args.split
 
 
-def _process_single_label(label_path):
+def _process_single_label(label_path, task):
     with open(label_path) as fin:
         bbox_xyxy_list = []
         cls_list = []
@@ -51,6 +52,9 @@ def _process_single_label(label_path):
                 continue  # labels for task1 have header
             x1, y1, x2, y2, x3, y3, x4, y4, cls, diff = line.split(' ')
             x1, y1, x2, y2, x3, y3, x4, y4, diff = [float(_) for _ in [x1, y1, x2, y2, x3, y3, x4, y4, diff]]
+            if task == 'obb':
+                aligned_quadruplet = align_quadruplet_corner_to_rectangl?!?jedi=0, e([x1, y1, x2, y2, x3, y3, x4, y4])?!? (*_*quadruplet*_*, with_modulo=True) ?!?jedi?!?
+                rotated_bbox = convert_aligned_quadruplet_to_rotated_bbox(align)
             xmin = min([x1, x2, x3, x4])
             xmax = max([x1, x2, x3, x4])
             ymin = min([y1, y2, y3, y4])
@@ -93,11 +97,11 @@ def _ioa(box1, box2):
     return intersect / area
 
 
-def process_single_full_image_and_label(image_path, label_path, im_id):
+def process_single_full_image_and_label(image_path, label_path, im_id, task):
     im = cv2.imread(image_path)
     h, w = im.shape[:2]
 
-    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path)
+    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task=task)
 
     roidb = []
     roirec = dict(
@@ -115,7 +119,7 @@ def process_single_full_image_and_label(image_path, label_path, im_id):
     return roidb
 
 
-def process_single_image_and_label(image_path, label_path, image_patch_dir, im_id):
+def process_single_image_and_label(image_path, label_path, image_patch_dir, im_id, task):
     im = cv2.imread(image_path)
     h, w = im.shape[:2]
     # x coords for grid points
@@ -135,7 +139,7 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
     if i not in ycoords and h - 1 - PATCH_SIZE > 0:
         ycoords.add(h - 1 - PATCH_SIZE)
 
-    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path)
+    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task)
 
     roidb = []
     image_base_name = os.path.basename(image_path)
