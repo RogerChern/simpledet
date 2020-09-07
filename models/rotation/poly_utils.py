@@ -73,7 +73,7 @@ def align_quadruplet_corner_to_rectangle(quadruplet):
         if temp_force < force:
             force = temp_force
             force_flag = i
-    return  reduce(operator.add, corner_orders[force_flag])
+    return reduce(operator.add, corner_orders[force_flag])
 
 def convert_aligned_quadruplet_to_rotated_bbox(quadruplet, with_modulo=True):
     """
@@ -84,7 +84,7 @@ def convert_aligned_quadruplet_to_rotated_bbox(quadruplet, with_modulo=True):
     """
     bbox = np.array(quadruplet, dtype=np.float32, copy=True)
     bbox = np.reshape(bbox, newshape=(-1, 4, 2))  # (N, 4, 2)
-    angle_in_radian = np.arctan((bbox[:, 1, 1] - bbox[:, 0, 1]) / (bbox[:, 1, 0] - bbox[:, 0, 0]))
+    angle_in_radian = np.arctan((bbox[:, 1, 1] - bbox[:, 0, 1]) / max((bbox[:, 1, 0] - bbox[:, 0, 0]), 1))
     center = np.mean(bbox, axis=1)  # (N, 2)
     unrotated = rotate_quadruplet_batch(bbox - center[:, None, :], -angle_in_radian)
 
