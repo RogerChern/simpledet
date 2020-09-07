@@ -35,9 +35,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Generate SimpleDet GroundTruth Database for the DOTA dataset')
     parser.add_argument('--data-dir', help='Path to the DOTA dataset, we assume a images and a labels_taskX_v1.0 folders', type=str)
     parser.add_argument('--split', type=str)
+    parser.add_argument('--task', type=str)
 
     args = parser.parse_args()
-    return args.data_dir, args.split
+    return args
 
 
 def _process_single_label(label_path, task):
@@ -46,6 +47,7 @@ def _process_single_label(label_path, task):
         cls_list = []
         cls_name_list = []
         diff_list = []
+        bbox_xywhr_list = []
         for line in fin:
             line = line.strip()
             if line[0] not in '0123456789':
@@ -53,8 +55,10 @@ def _process_single_label(label_path, task):
             x1, y1, x2, y2, x3, y3, x4, y4, cls, diff = line.split(' ')
             x1, y1, x2, y2, x3, y3, x4, y4, diff = [float(_) for _ in [x1, y1, x2, y2, x3, y3, x4, y4, diff]]
             if task == 'obb':
-                aligned_quadruplet = align_quadruplet_corner_to_rectangl?!?jedi=0, e([x1, y1, x2, y2, x3, y3, x4, y4])?!? (*_*quadruplet*_*, with_modulo=True) ?!?jedi?!?
-                rotated_bbox = convert_aligned_quadruplet_to_rotated_bbox(align)
+                aligned_quadruplet = align_quadruplet_corner_to_rectangle([x1, y1, x2, y2, x3, y3, x4, y4])
+                rotated_bbox = convert_aligned_quadruplet_to_rotated_bbox(aligned_quadruplet)
+                rotated_bbox = rotated_bbox[0].tolist()
+                bbox_xywhr_list.append(rotated_bbox)
             xmin = min([x1, x2, x3, x4])
             xmax = max([x1, x2, x3, x4])
             ymin = min([y1, y2, y3, y4])
@@ -64,7 +68,7 @@ def _process_single_label(label_path, task):
             cls_list.append(label_map[cls])
             cls_name_list.append(cls)
             diff_list.append(diff)
-        return np.array(bbox_xyxy_list), np.array(cls_list), cls_name_list, np.array(diff_list)
+    return np.array(bbox_xyxy_list), np.array(bbox_xywhr_list), np.array(cls_list), cls_name_list, np.array(diff_list)
 
 
 def _iou(box1, box2):
@@ -101,7 +105,7 @@ def process_single_full_image_and_label(image_path, label_path, im_id, task):
     im = cv2.imread(image_path)
     h, w = im.shape[:2]
 
-    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task=task)
+    bbox_xyxy_arr, bbox_xywhr_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task=task)
 
     roidb = []
     roirec = dict(
@@ -115,6 +119,8 @@ def process_single_full_image_and_label(image_path, label_path, im_id, task):
         image_url=image_path,
         im_id=im_id,
     )
+    if task == 'obb':
+        roirec['gt_rbbox'] = bbox_xywhr_arr
     roidb.append(roirec)
     return roidb
 
@@ -139,7 +145,7 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
     if i not in ycoords and h - 1 - PATCH_SIZE > 0:
         ycoords.add(h - 1 - PATCH_SIZE)
 
-    bbox_xyxy_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task)
+    bbox_xyxy_arr, bbox_xywhr_arr, cls_arr, cls_name_list, diff_arr = _process_single_label(label_path, task)
 
     roidb = []
     image_base_name = os.path.basename(image_path)
@@ -148,9 +154,11 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
             patch = im[y:y + PATCH_SIZE, x:x + PATCH_SIZE]
             image_patch_name = image_base_name.replace('.png', '_%d_%d.png' % (y, x))
             image_patch_path = os.path.join(image_patch_dir, image_patch_name)
-            cv2.imwrite(image_patch_path, patch)
+            if not os.path.exists(image_patch_path):
+                cv2.imwrite(image_patch_path, patch)
 
             keep_bbox = []
+            keep_rbbox = []
             keep_cls = []
             keep_cls_name = []
             keep_diff = []
@@ -163,16 +171,20 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
                 cy1, cy2 = np.clip([y1, y2], y, y + PATCH_SIZE)
                 ioa = _ioa([cx1, cy1, cx2, cy2], [x1, y1, x2, y2])
                 keep_bbox.append([cx1 - x, cy1 - y, cx2 - x, cy2 - y])
+                if task == 'obb':
+                    keep_rbbox.append(bbox_xywhr_arr[i].tolist())
                 keep_cls.append(cls_arr[i].item())
                 keep_cls_name.append(cls_name_list[i])
                 keep_diff.append(1 if ioa < 0.7 else diff_arr[i].item())
 
             if len(keep_bbox) == 0:
                 keep_bbox = np.zeros((0, 4), dtype=np.float32)
+                keep_rbbox = np.zeros((0, 5), dtype=np.float32)
                 keep_cls = np.zeros((0, 1), dtype=np.float32)
                 keep_diff = np.zeros((0, 1), dtype=np.float32)
             else:
                 keep_bbox = np.array(keep_bbox, dtype=np.float32)
+                keep_rbbox = np.array(keep_rbbox, dtype=np.float32)
                 keep_cls = np.array(keep_cls, dtype=np.float32)
                 keep_diff = np.array(keep_diff, dtype=np.float32)
 
@@ -189,11 +201,13 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
                 image_url=image_patch_path,
                 im_id=im_id,
             )
+            if task == 'obb':
+                roirec['gt_rbbox'] = keep_rbbox
             roidb.append(roirec)
     return roidb
 
 
-def create_roidb(data_dir, split, task='hbb'):
+def create_roidb(data_dir, split, task):
     # sanity check
     """
     |-- images
@@ -227,14 +241,14 @@ def create_roidb(data_dir, split, task='hbb'):
         label_path = image_path.replace('images', label_folder).replace('.png', '.txt')
         assert os.path.exists(label_path), '%s does not exist' % label_path
         if split == 'val_full':
-            roidb += process_single_full_image_and_label(image_path, label_path, im_id)
+            roidb += process_single_full_image_and_label(image_path, label_path, im_id, task)
         else:
-            roidb += process_single_image_and_label(image_path, label_path, image_patch_dir, im_id)
+            roidb += process_single_image_and_label(image_path, label_path, image_patch_dir, im_id, task)
     with open('data/cache/dota_v1_%s_%s.roidb' % (task, split), 'wb') as fout:
         pickle.dump(roidb, fout)
 
 
 if __name__ == '__main__':
-    data_dir, split = parse_args()
+    args = parse_args()
     os.makedirs("data/cache", exist_ok=True)
-    create_roidb(data_dir, split, task='hbb')
+    create_roidb(args.data_dir, args.split, args.task)
