@@ -1,5 +1,6 @@
 import builtins
 import datetime
+import json
 import os
 import logging
 import math
@@ -37,6 +38,7 @@ def parse_args():
     parser.add_argument('--postfix', type=str, default="")
     parser.add_argument('--skip-coco-metric', action='store_true')
     parser.add_argument('--skip-ten-ap-metric', action='store_true')
+    parser.add_argument('--skip-dump-result-json', action='store_true')
     parser.add_argument('--max-det', type=int, default=100)
     args = parser.parse_args()
 
@@ -351,10 +353,10 @@ if __name__ == "__main__":
         t5_s = time.time()
         print("convert to coco format uses: %.1f" % (t5_s - t4_s))
 
-    import json
-    result_path = args.result_path or \
-        "experiments/{}/{}_result.json".format(pGen.name, pDataset.image_set[0])
-    json.dump(coco_result, open(result_path, "w"), sort_keys=True, indent=2)
+    if not args.skip_dump_result_json:
+        result_path = args.result_path or \
+            "experiments/{}/{}_result.json".format(pGen.name, pDataset.image_set[0])
+        json.dump(coco_result, open(result_path, "w"), sort_keys=True, indent=2)
 
     coco_dt = coco.loadRes(coco_result)
     coco_eval = COCOeval(coco, coco_dt)
