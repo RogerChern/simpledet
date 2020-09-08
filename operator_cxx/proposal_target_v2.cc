@@ -36,7 +36,7 @@ inline void SampleROI(const Tensor<cpu, 2, DType> &all_rois,
                       Tensor<cpu, 1, DType> &&labels,
                       Tensor<cpu, 2, DType> &&bbox_targets,
                       Tensor<cpu, 2, DType> &&bbox_weights,
-                      Tensor<cpu, 1, DType> &&match_gt_ious) {
+                      Tensor<cpu, 1, DType> &&match_gt_idxes) {
   /*
   overlaps = bbox_overlaps(rois[:, 1:].astype(np.float), gt_boxes[:, :4].astype(np.float))
   gt_assignment = overlaps.argmax(axis=1)
@@ -89,7 +89,7 @@ inline void SampleROI(const Tensor<cpu, 2, DType> &all_rois,
   }
 
   /*
-  bg_indexes = np.where((overlaps < config.TRAIN.BG_THRESH_HI) & (overlaps >= config.TRAIN.BG_THRESH_LO))[0] 
+  bg_indexes = np.where((overlaps < config.TRAIN.BG_THRESH_HI) & (overlaps >= config.TRAIN.BG_THRESH_LO))[0]
   bg_rois_per_this_image = rois_per_image - fg_rois_per_this_image
   bg_rois_per_this_image = np.minimum(bg_rois_per_this_image, bg_indexes.size)
   if len(bg_indexes) > bg_rois_per_this_image:
@@ -144,7 +144,7 @@ inline void SampleROI(const Tensor<cpu, 2, DType> &all_rois,
       labels[i] = all_labels[kept_indexes[i]];
     }
     Copy(rois[i], all_rois[kept_indexes[i]]);
-    match_gt_ious[i] = max_overlaps[kept_indexes[i]];
+    match_gt_idxes[i] = static_cast<DType>(gt_assignment[kept_indexes[i]]);
   }
 
 

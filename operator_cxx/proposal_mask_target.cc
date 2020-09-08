@@ -236,7 +236,7 @@ inline void SampleROIMask(const Tensor<cpu, 2, DType> &all_rois,
                       Tensor<cpu, 1, DType> &&labels,
                       Tensor<cpu, 2, DType> &&bbox_targets,
                       Tensor<cpu, 2, DType> &&bbox_weights,
-                      Tensor<cpu, 1, DType> &&match_gt_ious,
+                      Tensor<cpu, 1, DType> &&match_gt_idxes,
                       Tensor<cpu, 3, DType> &&mask_targets,
                       Tensor<cpu, 1, DType> &&mask_ratios) {
   /*
@@ -336,7 +336,7 @@ inline void SampleROIMask(const Tensor<cpu, 2, DType> &all_rois,
       labels[i] = all_labels[kept_indexes[i]];
     }
     Copy(rois[i], all_rois[kept_indexes[i]]);
-    match_gt_ious[i] = max_overlaps[kept_indexes[i]];
+    match_gt_idxes[i] = static_cast<DType>(gt_assignment[kept_indexes[i]]);
   }
 
 

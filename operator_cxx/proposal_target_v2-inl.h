@@ -41,7 +41,7 @@ inline void SampleROI(
   Tensor<cpu, 1, DType> &&labels,
   Tensor<cpu, 2, DType> &&bbox_targets,
   Tensor<cpu, 2, DType> &&bbox_weights,
-  Tensor<cpu, 1, DType> &&match_gt_ious
+  Tensor<cpu, 1, DType> &&match_gt_idxes
 );
 
 template <typename DType>
@@ -76,7 +76,7 @@ namespace op {
 
 namespace proposal_target_v2_enum {
 enum ProposalTargetInputs {kRois, kGtBboxes, kValidRanges};
-enum ProposalTargetOutputs {kRoiOutput, kLabel, kBboxTarget, kBboxWeight, kMatch_gt_iou};
+enum ProposalTargetOutputs {kRoiOutput, kLabel, kBboxTarget, kBboxWeight, kMatchGtIdx};
 }
 
 struct ProposalTargetParam_v2 : public dmlc::Parameter<ProposalTargetParam_v2> {
@@ -91,7 +91,7 @@ struct ProposalTargetParam_v2 : public dmlc::Parameter<ProposalTargetParam_v2> {
   bool class_agnostic;
   bool ohem;
   bool filter_scales;
-  bool output_iou;
+  bool ouput_idx;
   nnvm::Tuple<float> bbox_mean;
   nnvm::Tuple<float> bbox_std;
   nnvm::Tuple<float> bbox_weight;
@@ -107,7 +107,7 @@ struct ProposalTargetParam_v2 : public dmlc::Parameter<ProposalTargetParam_v2> {
     DMLC_DECLARE_FIELD(proposal_without_gt).describe("Do not append ground-truth bounding boxes to output");
     DMLC_DECLARE_FIELD(class_agnostic).set_default(false).describe("class agnostic bbox_target");
     DMLC_DECLARE_FIELD(ohem).set_default(false).describe("Do online hard sample mining");
-    DMLC_DECLARE_FIELD(output_iou).set_default(false).describe("output match_gt_iou");
+    DMLC_DECLARE_FIELD(ouput_idx).set_default(false).describe("output match_gt_idx");
     float tmp[] = {0.f, 0.f, 0.f, 0.f};
     DMLC_DECLARE_FIELD(bbox_mean).set_default(nnvm::Tuple<float>(tmp, tmp+4)).describe("Bounding box mean");
     tmp[0] = 0.1f; tmp[1] = 0.1f; tmp[2] = 0.2f; tmp[3] = 0.2f;
@@ -210,7 +210,7 @@ class ProposalTargetOp_v2 : public Operator {
     TensorContainer<cpu, 2, DType> cpu_labels(Shape2(num_image, image_rois), 0.f);
     TensorContainer<cpu, 3, DType> cpu_bbox_targets(Shape3(num_image, image_rois, param_.num_classes * 4), 0.f);
     TensorContainer<cpu, 3, DType> cpu_bbox_weights(Shape3(num_image, image_rois, param_.num_classes * 4), 0.f);
-    TensorContainer<cpu, 2, DType> cpu_match_gt_ious(Shape2(num_image, image_rois), 0.f);
+    TensorContainer<cpu, 2, DType> cpu_match_gt_idxes(Shape2(num_image, image_rois), 0.f);
 
 
     if (param_.ohem) {
@@ -265,7 +265,7 @@ class ProposalTargetOp_v2 : public Operator {
             cpu_labels[i],
             cpu_bbox_targets[i],
             cpu_bbox_weights[i],
-            cpu_match_gt_ious[i]);
+            cpu_match_gt_idxes[i]);
         }
     }
 
@@ -277,14 +277,14 @@ class ProposalTargetOp_v2 : public Operator {
                                              get_with_shape<xpu, 3, DType>(Shape3(num_image, image_rois, param_.num_classes * 4), s);
     Tensor<xpu, 3, DType> xpu_bbox_weights = out_data[proposal_target_v2_enum::kBboxWeight].
                                              get_with_shape<xpu, 3, DType>(Shape3(num_image, image_rois, param_.num_classes * 4), s);
-    Tensor<xpu, 2, DType> xpu_match_gt_ious = out_data[proposal_target_v2_enum::kMatch_gt_iou].
+    Tensor<xpu, 2, DType> xpu_match_gt_idxes = out_data[proposal_target_v2_enum::kMatchGtIdx].
                                              get_with_shape<xpu, 2, DType>(Shape2(num_image, image_rois), s);
 
     Copy(xpu_output_rois, cpu_output_rois, s);
     Copy(xpu_labels, cpu_labels, s);
     Copy(xpu_bbox_targets, cpu_bbox_targets, s);
     Copy(xpu_bbox_weights, cpu_bbox_weights, s);
-    Copy(xpu_match_gt_ious, cpu_match_gt_ious, s);
+    Copy(xpu_match_gt_idxes, cpu_match_gt_idxes, s);
   }
 
   virtual void Backward(const OpContext &ctx,
@@ -329,7 +329,7 @@ class ProposalTargetProp_v2 : public OperatorProperty {
   }
 
   int NumVisibleOutputs() const override {
-    if (param_.output_iou) {
+    if (param_.ouput_idx) {
       return 5;
     } else {
       return 4;
@@ -345,7 +345,7 @@ class ProposalTargetProp_v2 : public OperatorProperty {
   }
 
   std::vector<std::string> ListOutputs() const override {
-    return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_iou"};
+    return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_idx"};
   }
 
   bool InferShape(std::vector<TShape> *in_shape,
@@ -360,14 +360,14 @@ class ProposalTargetProp_v2 : public OperatorProperty {
     auto label_shape = Shape2(dshape[0], image_rois);
     auto bbox_target_shape = Shape3(dshape[0], image_rois, param_.num_classes * 4);
     auto bbox_weight_shape = Shape3(dshape[0], image_rois, param_.num_classes * 4);
-    auto match_gt_iou_shape = Shape2(dshape[0], image_rois);
+    auto match_gt_idx_shape = Shape2(dshape[0], image_rois);
 
     out_shape->clear();
     out_shape->push_back(output_rois_shape);
     out_shape->push_back(label_shape);
     out_shape->push_back(bbox_target_shape);
     out_shape->push_back(bbox_weight_shape);
-    out_shape->push_back(match_gt_iou_shape);
+    out_shape->push_back(match_gt_idx_shape);
     aux_shape->clear();
 
     return true;

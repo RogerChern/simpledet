@@ -45,7 +45,7 @@ inline void SampleROIMask(const Tensor<cpu, 2, DType> &all_rois,
                       Tensor<cpu, 1, DType> &&labels,
                       Tensor<cpu, 2, DType> &&bbox_targets,
                       Tensor<cpu, 2, DType> &&bbox_weights,
-                      Tensor<cpu, 1, DType> &&match_gt_ious,
+                      Tensor<cpu, 1, DType> &&match_gt_idxes,
                       Tensor<cpu, 3, DType> &&mask_targets,
                       Tensor<cpu, 1, DType> &&mask_ratios);
 
@@ -81,7 +81,7 @@ namespace op {
 
 namespace proposal_mask_target_enum {
 enum ProposalMaskTargetInputs {kRois, kGtBboxes, kGtPolys, kValidRanges};
-enum ProposalMaskTargetOutputs {kRoiOutput, kLabel, kBboxTarget, kBboxWeight, kMatch_gt_iou, kMaskTarget, kMaskRatio};
+enum ProposalMaskTargetOutputs {kRoiOutput, kLabel, kBboxTarget, kBboxWeight, kMatchGtIdx, kMaskTarget, kMaskRatio};
 }
 
 struct ProposalMaskTargetParam : public dmlc::Parameter<ProposalMaskTargetParam> {
@@ -98,7 +98,7 @@ struct ProposalMaskTargetParam : public dmlc::Parameter<ProposalMaskTargetParam>
   bool class_agnostic;
   bool ohem;
   bool output_ratio;
-  bool output_iou;
+  bool output_idx;
   bool filter_scales;
   nnvm::Tuple<float> bbox_mean;
   nnvm::Tuple<float> bbox_std;
@@ -118,7 +118,7 @@ struct ProposalMaskTargetParam : public dmlc::Parameter<ProposalMaskTargetParam>
     DMLC_DECLARE_FIELD(class_agnostic).set_default(false).describe("class agnostic bbox_target");
     DMLC_DECLARE_FIELD(ohem).set_default(false).describe("Do online hard sample mining");
     DMLC_DECLARE_FIELD(output_ratio).set_default(false).describe("output mask ratio for mask scoring");
-    DMLC_DECLARE_FIELD(output_iou).set_default(false).describe("output match_gt_iou");
+    DMLC_DECLARE_FIELD(output_idx).set_default(false).describe("output match_gt_idx");
     DMLC_DECLARE_FIELD(filter_scales).set_default(false).describe("Not append ground-truth bounding boxes outside valid ranges");
     float tmp[] = {0.f, 0.f, 0.f, 0.f};
     DMLC_DECLARE_FIELD(bbox_mean).set_default(nnvm::Tuple<float>(tmp, tmp+4)).describe("Bounding box mean");
@@ -238,7 +238,7 @@ class ProposalMaskTargetOp : public Operator {
     TensorContainer<cpu, 2, DType> cpu_labels(Shape2(num_image, image_rois), 0.f);
     TensorContainer<cpu, 3, DType> cpu_bbox_targets(Shape3(num_image, image_rois, param_.num_classes * 4), 0.f);
     TensorContainer<cpu, 3, DType> cpu_bbox_weights(Shape3(num_image, image_rois, param_.num_classes * 4), 0.f);
-    TensorContainer<cpu, 2, DType> cpu_match_gt_ious(Shape2(num_image, image_rois), 0.f);
+    TensorContainer<cpu, 2, DType> cpu_match_gt_idxes(Shape2(num_image, image_rois), 0.f);
     TensorContainer<cpu, 4, DType> cpu_mask_targets(Shape4(num_image,  (index_t)(image_rois * param_.fg_fraction),
                                                            param_.mask_size, param_.mask_size), -1.f);
     TensorContainer<cpu, 2,  DType> cpu_mask_ratios(Shape2(num_image, (index_t)(image_rois * param_.fg_fraction)), 0.f);
@@ -306,7 +306,7 @@ class ProposalMaskTargetOp : public Operator {
                         cpu_labels[i],
                         cpu_bbox_targets[i],
                         cpu_bbox_weights[i],
-                        cpu_match_gt_ious[i],
+                        cpu_match_gt_idxes[i],
                         cpu_mask_targets[i],
                         cpu_mask_ratios[i]);
         }
@@ -320,7 +320,7 @@ class ProposalMaskTargetOp : public Operator {
                                              get_with_shape<xpu, 3, DType>(Shape3(num_image, image_rois, param_.num_classes * 4), s);
     Tensor<xpu, 3, DType> xpu_bbox_weights = out_data[proposal_mask_target_enum::kBboxWeight].
                                              get_with_shape<xpu, 3, DType>(Shape3(num_image, image_rois, param_.num_classes * 4), s);
-    Tensor<xpu, 2, DType> xpu_match_gt_ious = out_data[proposal_mask_target_enum::kMatch_gt_iou].
+    Tensor<xpu, 2, DType> xpu_match_gt_idxes = out_data[proposal_mask_target_enum::kMatchGtIdx].
                                              get_with_shape<xpu, 2, DType>(Shape2(num_image, image_rois), s);
     Tensor<xpu, 4, DType> xpu_mask_targets = out_data[proposal_mask_target_enum::kMaskTarget].get<xpu, 4, DType>(s);
 
@@ -328,7 +328,7 @@ class ProposalMaskTargetOp : public Operator {
     Copy(xpu_labels, cpu_labels, s);
     Copy(xpu_bbox_targets, cpu_bbox_targets, s);
     Copy(xpu_bbox_weights, cpu_bbox_weights, s);
-    Copy(xpu_match_gt_ious, cpu_match_gt_ious, s);
+    Copy(xpu_match_gt_idxes, cpu_match_gt_idxes, s);
     Copy(xpu_mask_targets, cpu_mask_targets, s);
     if (param_.output_ratio){
         Tensor<xpu, 2, DType> xpu_mask_ratios = out_data[proposal_mask_target_enum::kMaskRatio].get<xpu, 2, DType>(s);
@@ -386,7 +386,7 @@ class ProposalMaskTargetProp : public OperatorProperty {
 
   int NumVisibleOutputs() const override {
     int num_outputs = 5;
-    if (param_.output_iou) {
+    if (param_.output_idx) {
       num_outputs += 1;
     }
     if (param_.output_ratio){
@@ -397,7 +397,7 @@ class ProposalMaskTargetProp : public OperatorProperty {
 
   int NumOutputs() const override {
     int num_outputs = 5;
-    if (param_.output_iou){
+    if (param_.output_idx){
         num_outputs += 1;
     }
     if (param_.output_ratio){
@@ -416,10 +416,10 @@ class ProposalMaskTargetProp : public OperatorProperty {
 
   std::vector<std::string> ListOutputs() const override {
     if (param_.output_ratio){
-        return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_iou", "mask_target", "mask_ratio"};
+        return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_idx", "mask_target", "mask_ratio"};
     }
     else{
-        return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_iou", "mask_target"};
+        return {"roi_output", "label", "bbox_target", "bbox_weight", "match_gt_idx", "mask_target"};
     }
   }
 
@@ -439,7 +439,7 @@ class ProposalMaskTargetProp : public OperatorProperty {
     auto label_shape = Shape2(dshape[0], image_rois);
     auto bbox_target_shape = Shape3(dshape[0], image_rois, param_.num_classes * 4);
     auto bbox_weight_shape = Shape3(dshape[0], image_rois, param_.num_classes * 4);
-    auto match_gt_iou_shape = Shape2(dshape[0], image_rois);
+    auto match_gt_idx_shape = Shape2(dshape[0], image_rois);
     auto mask_target_shape = Shape4(dshape[0], (index_t)(image_rois * param_.fg_fraction), param_.mask_size, param_.mask_size);
 
     out_shape->clear();
@@ -447,7 +447,7 @@ class ProposalMaskTargetProp : public OperatorProperty {
     out_shape->push_back(label_shape);
     out_shape->push_back(bbox_target_shape);
     out_shape->push_back(bbox_weight_shape);
-    out_shape->push_back(match_gt_iou_shape);
+    out_shape->push_back(match_gt_idx_shape);
     out_shape->push_back(mask_target_shape);
 
     if (param_.output_ratio){
