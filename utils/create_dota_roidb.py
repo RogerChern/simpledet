@@ -172,7 +172,10 @@ def process_single_image_and_label(image_path, label_path, image_patch_dir, im_i
                 ioa = _ioa([cx1, cy1, cx2, cy2], [x1, y1, x2, y2])
                 keep_bbox.append([cx1 - x, cy1 - y, cx2 - x, cy2 - y])
                 if task == 'obb':
-                    keep_rbbox.append(bbox_xywhr_arr[i].tolist())
+                    rbbox = bbox_xywhr_arr[i].tolist()
+                    rbbox[0] = rbbox[0] - x
+                    rbbox[1] = rbbox[1] - y
+                    keep_rbbox.append(rbbox)
                 keep_cls.append(cls_arr[i].item())
                 keep_cls_name.append(cls_name_list[i])
                 keep_diff.append(1 if ioa < 0.7 else diff_arr[i].item())
