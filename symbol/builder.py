@@ -281,7 +281,7 @@ class RpnHead(object):
 
         return proposal
 
-    def get_sampled_proposal(self, conv_feat, gt_bbox, im_info):
+    def get_sampled_proposal(self, conv_feat, gt_bbox, im_info, return_idx=False):
         p = self.p
 
         batch_image = p.batch_image
@@ -301,7 +301,7 @@ class RpnHead(object):
 
         (proposal, proposal_score) = self.get_all_proposal(conv_feat, im_info)
 
-        (bbox, label, bbox_target, bbox_weight) = X.proposal_target(
+        (bbox, label, bbox_target, bbox_weight, assigned_gt_idx) = X.proposal_target(
             rois=proposal,
             gt_boxes=gt_bbox,
             num_classes=num_reg_class,
@@ -316,6 +316,7 @@ class RpnHead(object):
             bbox_weight=bbox_target_weight,
             bbox_mean=bbox_target_mean,
             bbox_std=bbox_target_std,
+            output_idx=True,
             name="subsample_proposal"
         )
 
@@ -323,7 +324,10 @@ class RpnHead(object):
         bbox_target = X.reshape(bbox_target, (-3, -2))
         bbox_weight = X.reshape(bbox_weight, (-3, -2))
 
-        return bbox, label, bbox_target, bbox_weight
+        if return_idx:
+            return bbox, label, bbox_target, bbox_weight, assigned_gt_idx
+        else:
+            return bbox, label, bbox_target, bbox_weight
 
 
 class BboxHead(object):
