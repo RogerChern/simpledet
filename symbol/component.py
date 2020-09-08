@@ -249,6 +249,7 @@ class BboxHead(object):
         p = self.p
         num_class = p.num_class
         num_reg_class = 2 if p.regress_target.class_agnostic else num_class
+        bbox_delta_dim = p.regress_target.bbox_delta_dim or 4
 
         head_feat = self._get_bbox_head_logit(conv_feat)
 
@@ -267,7 +268,7 @@ class BboxHead(object):
         )
         bbox_delta = X.fc(
             head_feat["regression"],
-            filter=4 * num_reg_class,
+            filter=bbox_delta_dim * num_reg_class,
             name='bbox_reg_delta',
             init=X.gauss(0.001)
         )
@@ -282,12 +283,13 @@ class BboxHead(object):
         num_class = p.num_class
         class_agnostic = p.regress_target.class_agnostic
         num_reg_class = 2 if class_agnostic else num_class
+        bbox_delta_dim = p.regress_target.bbox_delta_dim or 4
 
         cls_logit, bbox_delta = self.get_output(conv_feat)
 
         bbox_delta = X.reshape(
             bbox_delta,
-            shape=(batch_image, -1, 4 * num_reg_class),
+            shape=(batch_image, -1, bbox_delta_dim * num_reg_class),
             name='bbox_delta_reshape'
         )
 
