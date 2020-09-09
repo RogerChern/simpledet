@@ -46,7 +46,7 @@ def get_config(is_train):
     class BackboneParam:
         fp16 = General.fp16
         normalizer = NormalizeParam.normalizer
-        depth = 50
+        depth = 101
         num_branch = Trident.num_branch
         branch_ids = Trident.branch_ids
         branch_dilates = Trident.branch_dilates
